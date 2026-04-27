@@ -1,0 +1,23 @@
+diff --git a/node_modules/three-stdlib/controls/OrbitControls.js b/node_modules/three-stdlib/controls/OrbitControls.js
+index 576ad6f..2f13bdf 100644
+--- a/node_modules/three-stdlib/controls/OrbitControls.js
++++ b/node_modules/three-stdlib/controls/OrbitControls.js
+@@ -301,7 +301,7 @@ class OrbitControls extends EventDispatcher {
+       scope.domElement.addEventListener("contextmenu", onContextMenu);
+       scope.domElement.addEventListener("pointerdown", onPointerDown);
+       scope.domElement.addEventListener("pointercancel", onPointerUp);
+-      scope.domElement.addEventListener("wheel", onMouseWheel);
++      scope.domElement.addEventListener("wheel", onMouseWheel, { passive: false });
+     };
+     this.dispose = () => {
+       var _a, _b, _c, _d, _e, _f;
+@@ -490,6 +490,9 @@ class OrbitControls extends EventDispatcher {
+       scope.update();
+     }
+     function handleMouseWheel(event) {
++      if (scope.enabled === false || scope.enableZoom === false || state !== STATE.NONE)
++        return;
++      event.preventDefault();
+       updateMouseParameters(event);
+       if (event.deltaY < 0) {
+         dollyIn(getZoomScale());

@@ -1,0 +1,1494 @@
+/* ── Room Planner Layout — Base44 Warm Theme ───────────────────────── */
+
+.planner-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: #FFF8F0;
+}
+
+/* AI Room Planner: catalog sidebar + 3D + generation form */
+.planner-layout-ai {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: #FFF8F0;
+}
+
+.planner-ai-form-panel {
+  width: 380px;
+  min-width: 300px;
+  max-width: min(420px, 42vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-left: 1px solid #F0E6D8;
+  z-index: 12;
+}
+
+.planner-ai-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.planner-ai-form__header {
+  display: flex;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #F0E6D8;
+}
+
+.planner-ai-form__header h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+.planner-ai-form__header p,
+.planner-ai-form__hint,
+.planner-ai-form__result p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6B7280;
+}
+
+.planner-ai-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.planner-ai-form__field textarea,
+.planner-ai-form__field input {
+  width: 100%;
+  border: 1px solid #E8DFD4;
+  border-radius: 10px;
+  background: #FFFCF8;
+  color: #1A1A1A;
+  font: inherit;
+}
+
+.planner-ai-form__field textarea {
+  min-height: 130px;
+  resize: vertical;
+  padding: 10px 12px;
+  font-weight: 400;
+}
+
+.planner-ai-form__field input {
+  padding: 9px;
+  font-weight: 400;
+}
+
+.planner-ai-form__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: #C026D3;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.planner-ai-form__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.planner-ai-form__error {
+  padding: 10px 12px;
+  border: 1px solid #FCA5A5;
+  border-radius: 10px;
+  background: #FEF2F2;
+  color: #991B1B;
+  font-size: 12px;
+}
+
+.planner-ai-form__result {
+  padding: 12px;
+  border: 1px solid #D9F99D;
+  border-radius: 12px;
+  background: #F7FEE7;
+}
+
+.planner-ai-form__result h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #365314;
+}
+
+.planner-ai-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+
+.planner-sidebar {
+  width: 320px;
+  min-width: 320px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-right: 1px solid #F0E6D8;
+  z-index: 10;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #F0E6D8;
+}
+
+.sidebar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1A1A1A;
+  letter-spacing: -0.3px;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+}
+
+.sidebar-section {
+  padding: 12px 20px;
+  border-bottom: 1px solid #F0E6D8;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #6B7280;
+  margin-bottom: 10px;
+}
+
+/* Collapsible “Room setup” — keeps catalog / search visible by default */
+.sidebar-room-setup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.sidebar-room-setup-header:hover .section-label {
+  color: #4b5563;
+}
+
+.sidebar-room-setup-chevron {
+  flex-shrink: 0;
+  color: #9ca3af;
+  transition: transform 0.15s ease;
+}
+
+.sidebar-room-setup-chevron--open {
+  transform: rotate(90deg);
+}
+
+.sidebar-room-setup-summary {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.sidebar-room-setup-subheading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #6b7280;
+  margin: 12px 0 8px;
+}
+
+.sidebar-room-setup-subheading:first-child {
+  margin-top: 0;
+}
+
+/* Room sliders */
+.room-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.slider-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6B7280;
+  width: 42px;
+  flex-shrink: 0;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  accent-color: #E8772E;
+  cursor: pointer;
+}
+
+.slider-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1A1A1A;
+  width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Search */
+.search-box {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9CA3AF;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+  border: 1px solid #F0E6D8;
+  border-radius: 10px;
+  font-size: 13px;
+  background: #FFF8F0;
+  color: #1A1A1A;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.search-input:focus {
+  border-color: #E8772E;
+  background: #fff;
+}
+
+.search-input::placeholder {
+  color: #9CA3AF;
+}
+
+/* Catalog list */
+.catalog-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.catalog-group {
+  padding: 0 20px;
+}
+
+.catalog-category {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #6B7280;
+  padding: 12px 0 6px;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.catalog-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #FEF3E7;
+  transition: background 0.1s;
+}
+
+.catalog-item:hover {
+  background: #FFF8F0;
+  margin: 0 -20px;
+  padding: 8px 20px;
+}
+
+.catalog-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.catalog-swatch img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.catalog-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.catalog-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1A1A1A;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.catalog-meta {
+  font-size: 11px;
+  color: #6B7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.catalog-price {
+  font-size: 12px;
+  font-weight: 600;
+  color: #E8772E;
+}
+
+.btn-add {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #F0E6D8;
+  background: #fff;
+  color: #E8772E;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.btn-add:hover {
+  background: #E8772E;
+  color: #fff;
+  border-color: #E8772E;
+}
+
+.catalog-empty {
+  text-align: center;
+  padding: 32px 20px;
+  color: #9CA3AF;
+  font-size: 13px;
+}
+
+/* ── Main Area ────────────────────────────────────────────────────── */
+
+.planner-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── Top Bar ──────────────────────────────────────────────────────── */
+
+.planner-topbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid #F0E6D8;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-height: 48px;
+  z-index: 5;
+}
+
+.topbar-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-center {
+  flex: 1;
+  justify-content: center;
+}
+
+.topbar-right {
+  margin-left: auto;
+}
+
+.topbar-stat {
+  font-size: 13px;
+  color: #6B7280;
+}
+
+.topbar-stat strong {
+  color: #1A1A1A;
+}
+
+.topbar-divider {
+  color: #F0E6D8;
+  font-size: 14px;
+}
+
+.topbar-selected-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #E8772E;
+  margin-right: 8px;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #F0E6D8;
+  background: #fff;
+  color: #6B7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-icon:hover {
+  background: #FEF3E7;
+  color: #1A1A1A;
+}
+
+.btn-danger {
+  color: #e53935;
+}
+
+.btn-danger:hover {
+  background: #fdecea;
+  color: #c62828;
+  border-color: #e53935;
+}
+
+.btn-danger-subtle {
+  color: #9CA3AF;
+}
+
+.btn-danger-subtle:hover {
+  color: #e53935;
+  background: #fdecea;
+  border-color: #e53935;
+}
+
+/* Color picker inline */
+.topbar-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #6B7280;
+  position: relative;
+}
+
+.color-input {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #F0E6D8;
+  border-radius: 8px;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+.color-input::-moz-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+/* Dimension inputs inline */
+.topbar-dims {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #6B7280;
+}
+
+.dim-input {
+  width: 48px;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid #F0E6D8;
+  border-radius: 6px;
+  background: #FEFCFA;
+  font-size: 12px;
+  text-align: center;
+  color: #1A1A1A;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.dim-input::-webkit-outer-spin-button,
+.dim-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dim-input:focus {
+  border-color: #E8772E;
+  box-shadow: 0 0 0 2px rgba(232, 119, 46, 0.15);
+}
+
+.dim-x {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+
+.dim-unit {
+  font-size: 11px;
+  color: #9CA3AF;
+  margin-left: 1px;
+}
+
+.btn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid #F0E6D8;
+  background: #fff;
+  color: #6B7280;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn-toggle:hover {
+  background: #FEF3E7;
+  color: #1A1A1A;
+}
+
+.btn-toggle.active {
+  background: #FEF3E7;
+  color: #E8772E;
+  border-color: #E8772E;
+}
+
+.topbar-hints {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  padding-top: 2px;
+  flex-wrap: wrap;
+}
+
+.topbar-hints span {
+  font-size: 10px;
+  color: #9CA3AF;
+  background: #FEF3E7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* ── Canvas ───────────────────────────────────────────────────────── */
+
+.planner-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #e8e4df 0%, #ddd8d2 100%);
+  cursor: grab;
+}
+
+.planner-canvas-wrapper:active {
+  cursor: grabbing;
+}
+
+.planner-canvas-wrapper canvas {
+  display: block;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .planner-sidebar {
+    width: 260px;
+    min-width: 260px;
+  }
+
+  .topbar-hints {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .planner-layout {
+    flex-direction: column;
+  }
+
+  .planner-sidebar {
+    width: 100%;
+    min-width: 100%;
+    height: 40vh;
+  }
+
+  .planner-main {
+    height: 60vh;
+  }
+}
+
+/* ── Kitchen setup wizard (shape + 2D floor plan) ───────────────────── */
+
+.kitchen-setup-wizard {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(255, 255, 255, 0.97);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 24px 48px;
+  overflow: auto;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+}
+
+.kitchen-setup-panel {
+  max-width: 920px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e8e0d4;
+  border-radius: 12px;
+  padding: 28px 32px 36px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+/* Full-width “store planner” panel when editing the floor plan (IKEA-like) */
+.kitchen-setup-wizard:has(.kitchen-plan-shell) {
+  align-items: stretch;
+  padding: 20px 16px 28px;
+}
+
+.kitchen-setup-panel:has(.kitchen-plan-shell) {
+  max-width: min(1180px, 100%);
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border-color: #e5e5e5;
+  box-shadow: 0 8px 36px rgba(0, 0, 0, 0.08);
+  min-height: min(720px, calc(100vh - 120px));
+}
+
+.kitchen-setup-panel:has(.kitchen-plan-shell) .kitchen-plan-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+.kitchen-setup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.kitchen-setup-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.kitchen-setup-header-layout {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 12px 16px;
+}
+
+.kitchen-setup-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: #111;
+}
+
+.kitchen-setup-sub {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #555;
+  line-height: 1.45;
+  max-width: 36rem;
+}
+
+.kitchen-setup-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #666;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.kitchen-setup-close:hover {
+  background: #f3f3f3;
+}
+
+.kitchen-setup-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #e0d8cc;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #333;
+  height: fit-content;
+}
+
+.kitchen-setup-section {
+  margin-bottom: 28px;
+}
+
+.kitchen-setup-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  margin: 0 0 12px;
+}
+
+.kitchen-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.kitchen-shape-card {
+  position: relative;
+  border: 2px solid #e5e5e5;
+  border-radius: 10px;
+  padding: 16px 12px 14px;
+  background: #fafafa;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.kitchen-shape-card:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+
+.kitchen-shape-card.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.kitchen-shape-card .kitchen-wizard-shape-svg {
+  width: 72px;
+  height: 72px;
+}
+
+.kitchen-shape-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.kitchen-shape-check {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kitchen-layout-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+/* ── Floor plan step: top bar + wide 2D board + settings rail ───────── */
+.kitchen-plan-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+.kitchen-plan-topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px 16px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid #ebebeb;
+  background: linear-gradient(180deg, #fafafa 0%, #f5f5f5 100%);
+}
+
+.kitchen-plan-topbar__center {
+  text-align: center;
+  min-width: 0;
+  justify-self: center;
+  max-width: 36rem;
+}
+
+.kitchen-plan-topbar__end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.kitchen-wizard-unit-toggle button {
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+}
+
+.kitchen-plan-breadcrumb {
+  margin: 0 0 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #737373;
+}
+
+.kitchen-plan-breadcrumb__sep {
+  margin: 0 6px;
+  opacity: 0.45;
+}
+
+.kitchen-plan-breadcrumb--current {
+  color: #0058a3;
+}
+
+.kitchen-plan-heading {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #111;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.kitchen-plan-lede {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #525252;
+  line-height: 1.45;
+}
+
+.kitchen-plan-back {
+  align-self: center;
+}
+
+.kitchen-plan-close {
+  align-self: start;
+}
+
+.kitchen-layout-body.kitchen-layout-body--plan {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 304px);
+  gap: 0;
+  align-items: stretch;
+  flex: 1;
+  min-height: 400px;
+  max-height: min(78vh, 840px);
+}
+
+.kitchen-plan-board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #e8e8e8;
+  padding: 12px 14px 16px;
+}
+
+.kitchen-plan-board__label {
+  margin-bottom: 8px;
+}
+
+.kitchen-plan-board__label-text {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #737373;
+}
+
+.kitchen-plan-board__sheet {
+  flex: 1;
+  min-height: 320px;
+  background: #f3f3f3;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.kitchen-plan-board__sheet .kitchen-floor-plan-svg {
+  max-height: none;
+}
+
+.kitchen-plan-help {
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  color: #404040;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.kitchen-plan-help summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: #363636;
+  list-style: none;
+}
+
+.kitchen-plan-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.kitchen-plan-help ul {
+  margin: 0;
+  padding: 0 12px 12px 28px;
+  line-height: 1.5;
+}
+
+.kitchen-plan-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px 20px;
+  background: #fff;
+  border-left: 1px solid #e5e5e5;
+  overflow-y: auto;
+}
+
+.kitchen-plan-sidebar__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111;
+  letter-spacing: -0.01em;
+}
+
+.kitchen-plan-section {
+  padding-bottom: 14px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.kitchen-plan-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.kitchen-plan-section__label {
+  margin: 0 0 10px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #737373;
+}
+
+.kitchen-plan-sidebar .kitchen-field input[type="range"] {
+  accent-color: #0058a3;
+}
+
+.kitchen-plan-sidebar .kitchen-edge-list li button.active {
+  background: rgba(0, 88, 163, 0.1);
+  color: #0058a3;
+}
+
+.kitchen-plan-sidebar .kitchen-continue-btn {
+  margin-top: 8px;
+  background: #0058a3;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.9375rem;
+}
+
+.kitchen-plan-sidebar .kitchen-continue-btn:hover {
+  background: #004a8c;
+}
+
+.kitchen-plan-sidebar .kitchen-freeform-badge {
+  color: #0058a3;
+  background: rgba(0, 88, 163, 0.08);
+}
+
+.kitchen-layout-canvas-wrap {
+  border: 1px solid #e8e0d4;
+  border-radius: 10px;
+  padding: 16px;
+  background: #fffcf7;
+}
+
+.kitchen-floor-plan-wrap .kitchen-floor-plan-svg {
+  min-height: 320px;
+}
+
+.kitchen-layout-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.kitchen-floor-plan-svg {
+  max-height: 520px;
+}
+
+.kitchen-floor-plan-resize-handle {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.12));
+}
+
+.kitchen-floor-plan-resize-handle:active {
+  cursor: grabbing !important;
+}
+
+.kitchen-area-badge-hint {
+  font-size: 0.8rem;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.kitchen-area-badge {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.kitchen-layout-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kitchen-freeform-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn-kitchen-reset-outline {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+
+.btn-kitchen-reset-outline:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.btn-kitchen-reset-outline:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.kitchen-freeform-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eff6ff;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.kitchen-field span:first-child {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.kitchen-field input[type="range"] {
+  width: 100%;
+  accent-color: #2563eb;
+}
+
+.kitchen-field-val {
+  font-size: 0.8125rem;
+  color: #333;
+}
+
+.kitchen-edge-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+
+.kitchen-edge-list li button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.kitchen-edge-list li button:hover {
+  background: #f9fafb;
+}
+
+.kitchen-edge-list li button.active {
+  background: #dbeafe;
+  font-weight: 600;
+}
+
+.kitchen-edge-list-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.kitchen-open-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-kitchen-door,
+.btn-kitchen-window {
+  flex: 1;
+  min-width: 140px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-kitchen-door:hover,
+.btn-kitchen-window:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.kitchen-field--checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.kitchen-field--checkbox input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #2563eb;
+}
+
+.kitchen-corner-hint {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.btn-kitchen-cut-corner {
+  margin-top: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #0f766e;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #115e59;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-kitchen-cut-corner:hover:not(:disabled) {
+  background: #ccfbf1;
+  border-color: #0d9488;
+}
+
+.btn-kitchen-cut-corner:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.kitchen-floor-shape-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-kitchen-shape-tool {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-kitchen-shape-tool:hover:not(:disabled) {
+  border-color: #0058a3;
+  color: #0058a3;
+  background: #f8fafc;
+}
+
+.btn-kitchen-shape-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-kitchen-shape-tool--danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff5f5;
+}
+
+.btn-kitchen-shape-tool--danger:hover:not(:disabled) {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.btn-kitchen-remove-opening {
+  margin-top: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-kitchen-remove-opening:hover {
+  background: #ffedd5;
+  border-color: #f97316;
+}
+
+.kitchen-openings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8125rem;
+}
+
+.kitchen-openings-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.kitchen-openings-list li.kitchen-opening-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.kitchen-opening-item__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.kitchen-opening-item__toggle {
+  flex: 1;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.kitchen-opening-item__toggle:hover {
+  color: #2563eb;
+}
+
+.kitchen-opening-item__fields {
+  width: 100%;
+  padding: 8px 0 4px;
+  border-top: 1px dashed #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kitchen-field--compact span {
+  font-size: 0.75rem;
+}
+
+.kitchen-opening-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.kitchen-opening-edge-select,
+.kitchen-opening-slider {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.kitchen-setup-wizard .link-remove {
+  border: none;
+  background: none;
+  color: #dc2626;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.kitchen-continue-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.kitchen-continue-btn:hover {
+  background: #1d4ed8;
+}
+
+@media (max-width: 840px) {
+  .kitchen-layout-body {
+    grid-template-columns: 1fr;
+  }
+
+  .kitchen-layout-body.kitchen-layout-body--plan {
+    max-height: none;
+    grid-template-columns: 1fr;
+  }
+
+  .kitchen-plan-sidebar {
+    border-left: none;
+    border-top: 1px solid #e5e5e5;
+    max-height: none;
+  }
+
+  .kitchen-plan-topbar {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .kitchen-plan-topbar__center {
+    order: -1;
+    justify-self: stretch;
+  }
+
+  .kitchen-plan-back,
+  .kitchen-plan-close {
+    justify-self: center;
+  }
+
+  .kitchen-shape-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

@@ -49,6 +49,8 @@ The Custom Designer includes an AI chat assistant that helps users create furnit
    OPENAI_API_KEY=your_openai_api_key_here
    AI_API_URL=https://api.openai.com/v1/chat/completions
    AI_MODEL=gpt-4o-mini
+   # Laravel handles AI Room Planner intent parsing via POST /api/planner/generate
+   NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api
    ```
 
 4. **Important**: Restart your Next.js dev server after adding environment variables:
@@ -113,6 +115,7 @@ src/app/planner/
 - **Top view**: Orthographic-like top-down camera
 - **Bounds clamping**: Furniture stays inside the room
 - **Persistence**: Auto-saves to localStorage; "Reset" clears everything
+- **AI Room Planner**: Submit text plus optional room/inspiration images to Laravel `POST /api/planner/generate`. AI only parses intent; Laravel rules generate the furniture plan, modules, and estimated price.
 - **Keyboard shortcuts**: Q/E (rotate), Del (delete), T (top view), G (grid), S (snap), Esc (deselect)
 
 ### Running
