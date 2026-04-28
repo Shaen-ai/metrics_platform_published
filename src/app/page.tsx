@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { contactSupportEmail } from "@/lib/publicEnv";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { getDesignVariables, getSiteDesign } from "./site-designs/registry";
@@ -26,7 +27,8 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
-  const { admin, initializeStore } = useStore();
+  const { initializeStore } = useStore();
+  const admin = useResolvedAdmin();
   const { t } = useTranslation();
   const design = getSiteDesign(admin);
   const brandName = admin?.companyName || "Tunzone";

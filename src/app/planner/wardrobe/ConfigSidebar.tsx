@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useWardrobeStore } from "./store";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 import { useWardrobeSheetLayout } from "../sheet/useWardrobeSheetLayout";
 import {
@@ -608,7 +609,8 @@ function AddonsPanel() {
 /* ── Interiors Panel ─────────────────────────────────────────────── */
 
 function InteriorsPanel() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const resolvedAdmin = useResolvedAdmin();
+  const currency = resolvedAdmin?.currency ?? "USD";
   const sections = useWardrobeStore((s) => s.config.sections);
   const frameHeight = useWardrobeStore((s) => s.config.frame.height);
   const frameDepth = useWardrobeStore((s) => s.config.frame.depth);
@@ -1509,7 +1511,8 @@ function DoorsPanel() {
 /* ── Handles Panel ───────────────────────────────────────────────── */
 
 function HandlesPanel() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const resolvedAdmin = useResolvedAdmin();
+  const currency = resolvedAdmin?.currency ?? "USD";
   const doors = useWardrobeStore((s) => s.config.doors);
   const sections = useWardrobeStore((s) => s.config.sections);
   const setDoorHandle = useWardrobeStore((s) => s.setDoorHandle);

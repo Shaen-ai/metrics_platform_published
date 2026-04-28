@@ -9,6 +9,7 @@ import KitchenTemplatesOverlay from "./TemplatesOverlay";
 import KitchenDesignShapeWizard from "./KitchenDesignShapeWizard";
 import { useKitchenStore } from "./store";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import {
   materialsFromStore,
@@ -33,7 +34,7 @@ const KitchenCanvas = dynamic(() => import("./KitchenCanvas"), {
 export default function KitchenLayout() {
   const kitchenDesignSetupComplete = useKitchenStore((s) => s.kitchenDesignSetupComplete);
   const rawMaterials = useStore((s) => s.materials);
-  const admin = useStore((s) => s.admin);
+  const admin = useResolvedAdmin();
   const setAvailableMaterials = useKitchenStore((s) => s.setAvailableMaterials);
   const setAvailableWorktopMaterials = useKitchenStore((s) => s.setAvailableWorktopMaterials);
   const setConfigForHydrate = useKitchenStore((s) => s.setConfigForHydrate);

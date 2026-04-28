@@ -16,12 +16,14 @@ import {
 import { useWardrobeStore } from "./store";
 import { calculatePrice } from "./data";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 import { PENDING_BEDROOM_WARDROBE_ID_KEY } from "./plannerWardrobeCatalog";
 
 export default function HeaderToolbar() {
   const router = useRouter();
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const admin = useResolvedAdmin();
+  const currency = admin?.currency ?? "USD";
   const addPlannerSavedWardrobe = useStore((s) => s.addPlannerSavedWardrobe);
   const config = useWardrobeStore((s) => s.config);
   const canUndo = useWardrobeStore((s) => s.canUndo);

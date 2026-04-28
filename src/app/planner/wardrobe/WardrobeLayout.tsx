@@ -7,6 +7,7 @@ import HeaderToolbar from "./HeaderToolbar";
 import TemplatesOverlay from "./TemplatesOverlay";
 import { useWardrobeStore } from "./store";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import {
   materialsFromStore,
@@ -30,7 +31,7 @@ const WardrobeCanvas = dynamic(() => import("./WardrobeCanvas"), {
 
 export default function WardrobeLayout() {
   const rawMaterials = useStore((s) => s.materials);
-  const admin = useStore((s) => s.admin);
+  const admin = useResolvedAdmin();
   const setAvailableMaterials = useWardrobeStore((s) => s.setAvailableMaterials);
 
   useEffect(() => {

@@ -5,10 +5,12 @@ import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { useWardrobeStore } from "./store";
 import { calculatePrice } from "./data";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 
 export default function PriceSummary() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const admin = useResolvedAdmin();
+  const currency = admin?.currency ?? "USD";
   const config = useWardrobeStore((s) => s.config);
   const availableMaterials = useWardrobeStore((s) => s.availableMaterials);
   const availableDoorMaterials = useWardrobeStore((s) => s.availableDoorMaterials);

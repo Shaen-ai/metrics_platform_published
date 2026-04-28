@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
 import { ArrowLeft, Home, Search, SlidersHorizontal, Package, X, ShoppingCart, Plus } from "lucide-react";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
 
 type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc";
@@ -336,7 +337,8 @@ function FloatingCartButton() {
 }
 
 export default function CatalogPage() {
-  const { catalogItems, admin, initializeStore } = useStore();
+  const { catalogItems, initializeStore } = useStore();
+  const admin = useResolvedAdmin();
   const design = getSiteDesign(admin);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");

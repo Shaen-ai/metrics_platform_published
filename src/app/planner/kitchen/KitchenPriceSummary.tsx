@@ -5,10 +5,12 @@ import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { useKitchenStore } from "./store";
 import { calculatePrice } from "./data";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 
 export default function KitchenPriceSummary() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const admin = useResolvedAdmin();
+  const currency = admin?.currency ?? "USD";
   const config = useKitchenStore((s) => s.config);
   const availableMaterials = useKitchenStore((s) => s.availableMaterials);
   const availableDoorMaterials = useKitchenStore((s) => s.availableDoorMaterials);

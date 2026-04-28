@@ -7,6 +7,7 @@ import { getPlannerConfig } from "../config";
 import { PlannerTypeProvider } from "../../planner/context";
 import { usePlannerStore } from "../../planner/store/usePlannerStore";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import Sidebar from "../../planner/components/Sidebar";
 import TopBar from "../../planner/components/TopBar";
 import RoomDesigner from "../../planner/components/RoomDesigner";
@@ -127,7 +128,8 @@ export default function DynamicPlannerPage() {
   const initPlanner = usePlannerStore((s) => s.initPlanner);
   const fetchCatalog = usePlannerStore((s) => s.fetchCatalog);
   const kitchenSetupComplete = usePlannerStore((s) => s.kitchenSetupComplete);
-  const { admin, initializeStore, initialized } = useStore();
+  const { initializeStore, initialized } = useStore();
+  const admin = useResolvedAdmin();
 
   const [mounted, setMounted] = useState(false);
 

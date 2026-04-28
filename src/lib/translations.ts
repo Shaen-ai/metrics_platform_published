@@ -10,21 +10,42 @@ export function normalizeLanguageCode(lang: string | undefined | null): Language
   return "en";
 }
 
+/** Cookie name for SSR + client language preference (must match `loadPublicBootstrap`). */
+export const PUBLIC_LANG_COOKIE = "tunzone-lang";
+
 let currentLang: LanguageCode = "en";
+
+/**
+ * Applies localStorage preference, then cookie (SSR-aligned), then tenant default from the layout.
+ */
+export function getResolvedLanguage(tenantDefault: LanguageCode): LanguageCode {
+  if (typeof window === "undefined") return tenantDefault;
+  const stored = localStorage.getItem("tunzone-lang") || localStorage.getItem("furnishplan-lang");
+  if (stored === "ru" || stored === "en") return stored;
+  try {
+    const m = document.cookie.match(
+      new RegExp(`(?:^|;\\s*)${PUBLIC_LANG_COOKIE}=(en|ru)`),
+    );
+    if (m?.[1] === "ru" || m?.[1] === "en") return m[1] as LanguageCode;
+  } catch {
+    /* ignore cookie parse issues */
+  }
+  return tenantDefault;
+}
 
 export function setLanguage(lang: LanguageCode) {
   currentLang = lang;
   if (typeof window !== "undefined") {
     localStorage.setItem("tunzone-lang", lang);
+    const maxAge = 60 * 60 * 24 * 365;
+    document.cookie = `${PUBLIC_LANG_COOKIE}=${lang}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
   }
 }
 
+/** Legacy fallback when no tenant default is injected (listeners). */
 export function getLanguage(): LanguageCode {
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("tunzone-lang") || localStorage.getItem("furnishplan-lang");
-    if (stored === "ru") return "ru";
-  }
-  return currentLang;
+  if (typeof window === "undefined") return currentLang;
+  return getResolvedLanguage(currentLang);
 }
 
 const plannerKeyMap: Record<string, string> = {

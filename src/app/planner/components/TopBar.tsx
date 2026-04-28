@@ -2,6 +2,7 @@
 
 import { useMemo, useCallback } from "react";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { usePlannerStore } from "../store/usePlannerStore";
 import { formatPrice } from "../utils/math";
 import { DraftDimInput } from "./DraftNumberFields";
@@ -24,7 +25,8 @@ import { usePlannerType } from "../context";
 import { formatLengthLabel } from "../utils/units";
 
 export default function TopBar() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const admin = useResolvedAdmin();
+  const currency = admin?.currency ?? "USD";
   const addWardrobeToCart = useStore((s) => s.addWardrobeToCart);
   const plannerConfig = usePlannerType();
   const placedItems = usePlannerStore((s) => s.placedItems);

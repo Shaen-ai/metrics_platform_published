@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Blocks, ChefHat, Home, Trash2 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import type { Admin, CatalogItem, Material, Module, ModuleTemplateSelection } from "@/lib/types";
 import {
@@ -183,7 +184,7 @@ function buildPlannerModule(input: {
 
 export default function ModulePlannerLayout() {
   const initializeStore = useStore((s) => s.initializeStore);
-  const admin = useStore((s) => s.admin);
+  const admin = useResolvedAdmin();
   const rawMaterials = useStore((s) => s.materials);
   const materials = useMemo(
     () => filterMaterialsForPlanner(rawMaterials, admin?.plannerMaterialIds),

@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { Button, Card, CardContent } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
 import { ArrowLeft, Home, Check, Filter } from "lucide-react";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
 
 export default function MaterialsPage() {
-  const { materials, admin, initializeStore } = useStore();
+  const { materials, initializeStore } = useStore();
+  const admin = useResolvedAdmin();
   const design = getSiteDesign(admin);
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);

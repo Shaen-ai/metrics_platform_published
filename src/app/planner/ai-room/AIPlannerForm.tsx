@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Loader2, Wand2 } from "lucide-react";
-import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { usePlannerStore } from "../store/usePlannerStore";
 import type { PlannerCatalogItem } from "../types";
 import { publicApiUrl } from "@/lib/publicEnv";
@@ -75,7 +75,8 @@ function applyGeneratedPlan(data: NonNullable<PlannerGenerateResponse["data"]>) 
 }
 
 export default function AIPlannerForm() {
-  const adminSlug = useStore((s) => s.admin?.slug ?? "demo");
+  const admin = useResolvedAdmin();
+  const adminSlug = admin?.slug ?? "demo";
   const roomImageRef = useRef<HTMLInputElement>(null);
   const inspirationImageRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");

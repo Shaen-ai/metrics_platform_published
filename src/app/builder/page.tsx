@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
 import { ArrowLeft, Home, Plus, Minus, Trash2 } from "lucide-react";
@@ -17,9 +18,9 @@ export default function BuilderPage() {
     removeModuleFromBuild,
     clearBuild,
     getBuildTotal,
-    admin,
     initializeStore,
   } = useStore();
+  const admin = useResolvedAdmin();
   const design = getSiteDesign(admin);
 
   useEffect(() => {

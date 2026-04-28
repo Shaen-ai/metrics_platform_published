@@ -43,6 +43,7 @@ import type { KitchenModulePresetBase, KitchenModulePresetWall } from "./data";
 import type { KitchenMaterial } from "./data";
 import type { Module } from "@/lib/types";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 import type { ModuleDimensionLimits } from "./data";
 import type { BaseModuleType, WallModuleType, DesignRefKind, GrainDirection } from "./types";
@@ -1875,7 +1876,8 @@ function CabinetsPanel() {
 // ── Countertop Panel ──────────────────────────────────────────────────
 
 function CountertopPanel() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const resolvedAdmin = useResolvedAdmin();
+  const currency = resolvedAdmin?.currency ?? "USD";
   const countertop = useKitchenStore((s) => s.config.countertop);
   const setCountertopMaterial = useKitchenStore((s) => s.setCountertopMaterial);
   const setAdminCountertopMaterial = useKitchenStore((s) => s.setAdminCountertopMaterial);
@@ -1988,7 +1990,8 @@ function FrontsPanel() {
 // ── Handles Panel ─────────────────────────────────────────────────────
 
 function HandlesPanel() {
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const resolvedAdmin = useResolvedAdmin();
+  const currency = resolvedAdmin?.currency ?? "USD";
   const handle = useKitchenStore((s) => s.config.doors.handle);
   const handleMaterialId = useKitchenStore((s) => s.config.doors.handleMaterialId);
   const availableHandleMaterials = useKitchenStore((s) => s.availableHandleMaterials);

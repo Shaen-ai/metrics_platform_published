@@ -6,6 +6,7 @@ import { Edges } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { PlacedItem, PlannerCatalogItem } from "../types";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { publicApiUrl } from "@/lib/publicEnv";
 import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import {
@@ -188,7 +189,7 @@ const PlacedWardrobeMesh = memo(function PlacedWardrobeMesh({
 }: FurnitureMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
   const rawMaterials = useStore((s) => s.materials);
-  const admin = useStore((s) => s.admin);
+  const admin = useResolvedAdmin();
   const materials = useMemo(
     () => filterMaterialsForPlanner(rawMaterials, admin?.plannerMaterialIds),
     [rawMaterials, admin?.plannerMaterialIds],

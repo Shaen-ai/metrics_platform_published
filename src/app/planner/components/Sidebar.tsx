@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePlannerStore } from "../store/usePlannerStore";
 import { useStore, useHydration } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { usePlannerType } from "../context";
 import { formatPrice } from "../utils/math";
 import { clampOpeningsForRoom, defaultOpeningHeight } from "../utils/openings";
@@ -81,7 +82,8 @@ export default function Sidebar() {
   const hydrated = useHydration();
   const plannerSavedWardrobes = useStore((s) => s.plannerSavedWardrobes);
   const removePlannerSavedWardrobe = useStore((s) => s.removePlannerSavedWardrobe);
-  const currency = useStore((s) => s.admin?.currency ?? "USD");
+  const resolvedAdmin = useResolvedAdmin();
+  const currency = resolvedAdmin?.currency ?? "USD";
 
   useEffect(() => {
     if (!hydrated || (plannerConfig?.id !== "bedroom" && plannerConfig?.id !== "ai-room")) return;

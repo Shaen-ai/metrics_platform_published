@@ -9,6 +9,7 @@ import { PlannerTypeProvider } from "./context";
 import { getPlannerConfig } from "../planners/config";
 import { usePlannerStore } from "./store/usePlannerStore";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import "./planner.css";
 
 const CanvasScene = dynamic(() => import("./components/CanvasScene"), {
@@ -31,7 +32,8 @@ const roomConfig = getPlannerConfig("room")!;
 export default function PlannerPage() {
   const initPlanner = usePlannerStore((s) => s.initPlanner);
   const fetchCatalog = usePlannerStore((s) => s.fetchCatalog);
-  const { admin, initializeStore, initialized } = useStore();
+  const { initializeStore, initialized } = useStore();
+  const admin = useResolvedAdmin();
   const [mounted, setMounted] = useState(false);
 
   const adminSlug = admin?.slug || "demo";

@@ -1,7 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { getTranslation, getLanguage, setLanguage as setLangStorage, type LanguageCode } from "@/lib/translations";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+  useContext,
+} from "react";
+import {
+  getTranslation,
+  getResolvedLanguage,
+  setLanguage as setLangStorage,
+  type LanguageCode,
+} from "@/lib/translations";
+import { PublishedLanguageContext } from "@/contexts/PublishedTenantProvider";
 
 const listeners = new Set<() => void>();
 
@@ -10,25 +22,39 @@ function notify() {
 }
 
 export function useTranslation() {
-  const [lang, setLang] = useState<LanguageCode>("en");
+  const tenantDefault = useContext(PublishedLanguageContext) ?? "en";
+  const [lang, setLang] = useState<LanguageCode>(() => {
+    if (typeof window === "undefined") {
+      return tenantDefault;
+    }
+    return getResolvedLanguage(tenantDefault);
+  });
+
+  useLayoutEffect(() => {
+    setLang(getResolvedLanguage(tenantDefault));
+  }, [tenantDefault]);
 
   useEffect(() => {
-    setLang(getLanguage());
-    const handler = () => setLang(getLanguage());
+    const handler = () => setLang(getResolvedLanguage(tenantDefault));
     listeners.add(handler);
-    return () => { listeners.delete(handler); };
-  }, []);
+    return () => {
+      listeners.delete(handler);
+    };
+  }, [tenantDefault]);
 
   const t = useCallback(
     (key: string): string => getTranslation(lang, key),
     [lang],
   );
 
-  const changeLang = useCallback((code: LanguageCode) => {
-    setLangStorage(code);
-    setLang(code);
-    notify();
-  }, []);
+  const changeLang = useCallback(
+    (code: LanguageCode) => {
+      setLangStorage(code);
+      setLang(code);
+      notify();
+    },
+    [],
+  );
 
   return { t, lang, changeLang };
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
 import {
@@ -82,9 +83,9 @@ export function EditorWorkspace({
     updateCanvasObject,
     removeCanvasObject,
     clearCanvas,
-    admin,
     initializeStore,
   } = useStore();
+  const admin = useResolvedAdmin();
 
   useEffect(() => {
     initializeStore();

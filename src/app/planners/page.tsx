@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   LayoutDashboard,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { plannerConfigs } from "./config";
 import { useStore } from "@/lib/store";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { plannerTranslationKey } from "@/lib/translations";
@@ -46,9 +48,11 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 export default function PlannersHubPage() {
-  const { admin, initializeStore } = useStore();
+  const { initializeStore } = useStore();
+  const admin = useResolvedAdmin();
   const { t } = useTranslation();
   const design = getSiteDesign(admin);
+  const brandName = admin?.companyName || "Tunzone";
 
   useEffect(() => {
     initializeStore();
@@ -73,7 +77,13 @@ export default function PlannersHubPage() {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center text-white font-bold text-xs">T</div>
+              <Image
+                src="/logo.png"
+                alt={`${brandName} logo`}
+                width={32}
+                height={32}
+                className="w-8 h-8 rounded-lg object-contain"
+              />
               <span className="text-lg font-semibold">{t("planners.title")}</span>
             </div>
           </div>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import type { CartLine } from "@/lib/types";
+import type { CartLine, Admin } from "@/lib/types";
 import { buildKitchenOrderBreakdown, buildWardrobeOrderBreakdown } from "@/lib/orderBreakdown";
 import {
   materialsFromStore,
@@ -33,6 +33,7 @@ import {
   Package,
 } from "lucide-react";
 import { publicApiUrl, publishedSiteUrl } from "@/lib/publicEnv";
+import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 
 function describeCartForPaypal(cart: CartLine[]): string {
   if (cart.length === 0) return "Order";
@@ -42,8 +43,8 @@ function describeCartForPaypal(cart: CartLine[]): string {
   return `${firstName} + ${cart.length - 1} more`;
 }
 
-function buildOrderPayload(cart: CartLine[]) {
-  const { materials, admin } = useStore.getState();
+function buildOrderPayload(cart: CartLine[], admin: Admin | null) {
+  const { materials } = useStore.getState();
   const plannerMaterials = filterMaterialsForPlanner(materials, admin?.plannerMaterialIds);
   const cabinetMats = materialsFromStore(plannerMaterials, admin?.companyName);
   const worktops = worktopMaterialsFromStore(plannerMaterials, admin?.companyName);
@@ -128,7 +129,8 @@ function buildOrderPayload(cart: CartLine[]) {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { cart, admin, removeFromCart, updateCartQuantity, clearCart, getCartTotal, initializeStore } = useStore();
+  const { cart, removeFromCart, updateCartQuantity, clearCart, getCartTotal, initializeStore } = useStore();
+  const admin = useResolvedAdmin();
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -157,7 +159,7 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const { type, items } = buildOrderPayload(cart);
+      const { type, items } = buildOrderPayload(cart, admin);
       const orderData = {
         customer_name: customerName.trim(),
         customer_email: customerEmail.trim(),
