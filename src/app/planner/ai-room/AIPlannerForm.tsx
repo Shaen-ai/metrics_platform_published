@@ -5,8 +5,7 @@ import { Loader2, Wand2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { usePlannerStore } from "../store/usePlannerStore";
 import type { PlannerCatalogItem } from "../types";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+import { publicApiUrl } from "@/lib/publicEnv";
 
 type GeneratedPlanItem = {
   id: string;
@@ -100,7 +99,7 @@ export default function AIPlannerForm() {
     if (inspirationFile) form.set("inspiration_image", inspirationFile);
 
     try {
-      const res = await fetch(`${API_URL}/planner/generate`, {
+      const res = await fetch(`${publicApiUrl}/planner/generate`, {
         method: "POST",
         body: form,
       });

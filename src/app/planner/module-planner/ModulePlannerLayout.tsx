@@ -2,29 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import { ArrowLeft, Blocks, ChefHat, Home, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Blocks, ChefHat, Home, Trash2 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { useStore } from "@/lib/store";
 import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import type { Admin, CatalogItem, Material, Module, ModuleTemplateSelection } from "@/lib/types";
-import { getPlannerModuleGlb, putPlannerModuleGlb } from "@/lib/plannerLocalModels";
 import {
   computeModuleTemplatePrice,
   defaultSelectionFromModule,
 } from "@/lib/moduleTemplatePricing";
 import { MODULE_HANDLES } from "@/lib/moduleHandles";
-import ModulePlannerModelSection from "./ModulePlannerModelSection";
 import "../planner.css";
-
-const ModelPreview = dynamic(() => import("@/components/ModelPreview"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center">
-      <Loader2 className="w-6 h-6 animate-spin text-[var(--muted-foreground)]" />
-    </div>
-  ),
-});
 
 const defaultConnectionPoints: Module["connectionPoints"] = {
   top: false,
@@ -115,42 +103,6 @@ function MaterialPicker({
   );
 }
 
-function SavedModuleModelPreview({ moduleId }: { moduleId: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const buf = await getPlannerModuleGlb(moduleId);
-      if (!buf || cancelled) return;
-      const blob = new Blob([buf], { type: "model/gltf-binary" });
-      setUrl(URL.createObjectURL(blob));
-    };
-    void run();
-    return () => {
-      cancelled = true;
-      setUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-    };
-  }, [moduleId]);
-
-  if (!url) {
-    return (
-      <div className="w-20 h-20 rounded-lg bg-[var(--muted)] border border-[var(--border)] flex items-center justify-center shrink-0">
-        <Loader2 className="w-5 h-5 animate-spin text-[var(--muted-foreground)]" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--muted)] shrink-0">
-      <ModelPreview modelUrl={url} className="w-full h-full" />
-    </div>
-  );
-}
-
 function SavedModuleMaterialLine({
   materialId,
   role,
@@ -200,7 +152,6 @@ function buildPlannerModule(input: {
   cabinetMaterialId?: string;
   doorMaterialId?: string;
   id?: string;
-  plannerLocalModel?: boolean;
 }): Module {
   const subModeId =
     input.materials.find((m) => m.subModeId)?.subModeId ??
@@ -227,7 +178,6 @@ function buildPlannerModule(input: {
     source: "planner",
     ...(input.cabinetMaterialId ? { cabinetMaterialId: input.cabinetMaterialId } : {}),
     ...(input.doorMaterialId ? { doorMaterialId: input.doorMaterialId } : {}),
-    ...(input.plannerLocalModel ? { plannerLocalModel: true } : {}),
   };
 }
 
@@ -257,9 +207,6 @@ export default function ModulePlannerLayout() {
   const [price, setPrice] = useState(0);
   const [cabinetMaterialId, setCabinetMaterialId] = useState("");
   const [doorMaterialId, setDoorMaterialId] = useState("");
-  const [pendingGlbBuffer, setPendingGlbBuffer] = useState<ArrayBuffer | null>(null);
-  const [model3dBusy, setModel3dBusy] = useState(false);
-  const [modelSectionKey, setModelSectionKey] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
 
   const configurableTemplates = useMemo(
@@ -303,27 +250,14 @@ export default function ModulePlannerLayout() {
     [materials],
   );
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
     if (!name.trim()) {
       setFormError("Module name is required.");
       return;
     }
-    if (model3dBusy) {
-      setFormError("Wait for 3D generation to finish before saving.");
-      return;
-    }
     const moduleId = uuidv4();
-    const glb = pendingGlbBuffer;
-    if (glb) {
-      try {
-        await putPlannerModuleGlb(moduleId, glb);
-      } catch {
-        setFormError("Could not save the 3D model on this device.");
-        return;
-      }
-    }
     const mod = buildPlannerModule({
       admin,
       materials,
@@ -340,11 +274,8 @@ export default function ModulePlannerLayout() {
       cabinetMaterialId: cabinetMaterialId || undefined,
       doorMaterialId: doorMaterialId || undefined,
       id: moduleId,
-      plannerLocalModel: !!glb,
     });
     addPlannerCustomModule(mod);
-    setModelSectionKey((k) => k + 1);
-    setPendingGlbBuffer(null);
     setName("");
     setDescription("");
     setWidth(60);
@@ -430,11 +361,6 @@ export default function ModulePlannerLayout() {
             {activeTemplate && templateSelection && (
               <div className="space-y-5 border-t border-[var(--border)] pt-5">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  {activeTemplate.modelUrl && activeTemplate.modelStatus === "done" ? (
-                    <div className="w-full sm:w-40 h-40 rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--muted)] shrink-0">
-                      <ModelPreview modelUrl={activeTemplate.modelUrl} className="w-full h-full" />
-                    </div>
-                  ) : null}
                   <div className="flex-1 min-w-0 text-sm space-y-1">
                     <div className="font-medium">{activeTemplate.name}</div>
                     <div className="text-[var(--muted-foreground)]">
@@ -584,9 +510,8 @@ export default function ModulePlannerLayout() {
         <div className="rounded-2xl border border-[var(--border)] bg-white p-6 shadow-sm mb-10">
           <h2 className="text-base font-semibold mb-1">Create local module (advanced)</h2>
           <p className="text-sm text-[var(--muted-foreground)] mb-6">
-            Name your module, set size and placement. Optionally attach a 3D model (upload GLB or generate from an image)
-            and pick body or door materials for reference. Saved only on this device. Kitchen Designer uses global
-            material pickers unless you change them there.
+            Name your module, set size and placement, and pick body or door materials for reference. Saved only on this
+            device. Kitchen Designer uses global material pickers unless you change them there.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -667,12 +592,6 @@ export default function ModulePlannerLayout() {
               </div>
             </div>
 
-            <ModulePlannerModelSection
-              key={modelSectionKey}
-              onPendingGlbChange={setPendingGlbBuffer}
-              onBusyChange={setModel3dBusy}
-            />
-
             <div>
               <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
                 Price ({currency})
@@ -718,8 +637,7 @@ export default function ModulePlannerLayout() {
 
             <button
               type="submit"
-              disabled={model3dBusy}
-              className="w-full sm:w-auto inline-flex justify-center rounded-lg bg-[var(--primary)] text-white font-medium px-5 py-2.5 text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:pointer-events-none"
+              className="w-full sm:w-auto inline-flex justify-center rounded-lg bg-[var(--primary)] text-white font-medium px-5 py-2.5 text-sm hover:opacity-90 transition-opacity"
             >
               Save module
             </button>
@@ -743,7 +661,6 @@ export default function ModulePlannerLayout() {
                   key={m.id}
                   className="flex gap-3 items-start rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm"
                 >
-                  {m.plannerLocalModel ? <SavedModuleModelPreview moduleId={m.id} /> : null}
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm">{m.name}</div>
                     <div className="text-xs text-[var(--muted-foreground)] mt-1">

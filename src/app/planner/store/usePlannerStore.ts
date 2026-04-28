@@ -20,8 +20,8 @@ function normalizeFloorStyle(style: string | undefined): FloorStyle {
     laminate: "laminate-natural-oak",
     "wood-light": "laminate-light-oak",
     "wood-warm": "laminate-natural-oak",
-    "wood-dark": "laminate-dark-brown",
-    "marble-white": "laminate-whitewashed",
+    "wood-dark": "laminate-aged-oak",
+    "marble-white": "laminate-soft-beige",
     "tile-herringbone": "laminate-natural-oak",
   };
   return legacyMap[style ?? ""] ?? "laminate-natural-oak";
@@ -39,24 +39,6 @@ import {
 import { roomTemplates } from "../data/roomTemplates";
 import { clampFurnitureToRoom, snapToGrid } from "../utils/math";
 import { v4 as uuidv4 } from "uuid";
-
-/**
- * Convert an absolute storage URL (e.g. http://localhost:8000/storage/files/…)
- * to a relative path (/storage/files/…) so it goes through the Next.js rewrite
- * proxy and works regardless of the backend origin.
- */
-function toRelativeStorageUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    const u = new URL(url);
-    if (u.pathname.startsWith("/storage/")) {
-      return u.pathname + u.search + u.hash;
-    }
-  } catch {
-    // not an absolute URL — already relative, return as-is
-  }
-  return url;
-}
 
 // ── localStorage helpers ──
 
@@ -239,7 +221,9 @@ export const usePlannerStore = create<PlannerState>()(
             depth: Math.round((sizes?.depth || 50) * toMeters * 1e4) / 1e4,
             height: Math.round((sizes?.height || 80) * toMeters * 1e4) / 1e4,
             color: item.availableColors?.[0]?.hex || "#8B8B8B",
-            modelPath: toRelativeStorageUrl(item.modelUrl),
+            imageUrl: item.images?.[0],
+            modelUrl: item.modelStatus === "done" ? item.modelUrl : undefined,
+            modelStatus: item.modelStatus,
             wallMounted: item.wallMounted ?? false,
             mountHeight: item.mountHeight ?? undefined,
           };

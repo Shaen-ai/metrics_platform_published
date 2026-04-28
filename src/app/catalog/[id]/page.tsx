@@ -7,18 +7,7 @@ import Image from "next/image";
 import { useStore } from "@/lib/store";
 import { Button, Card, CardContent } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
-import { ArrowLeft, Home, Box } from "lucide-react";
-import dynamic from "next/dynamic";
-
-const ModelPreview = dynamic(() => import("@/components/ModelPreview"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-2">
-      <Box className="w-12 h-12 text-emerald-500 animate-pulse" />
-      <span className="text-xs font-medium text-emerald-600">Loading 3D...</span>
-    </div>
-  ),
-});
+import { ArrowLeft, Home } from "lucide-react";
 
 export default function CatalogDetailPage() {
   const params = useParams();
@@ -83,8 +72,6 @@ export default function CatalogDetailPage() {
                     fill
                     className="object-cover"
                   />
-                ) : item.modelUrl && item.modelStatus === "done" ? (
-                  <ModelPreview modelUrl={item.modelUrl} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[var(--muted-foreground)]">
                     No image

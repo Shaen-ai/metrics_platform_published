@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
+import { contactSupportEmail } from "@/lib/publicEnv";
 import { useStore } from "@/lib/store";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -44,9 +46,14 @@ export default function HomePage() {
       <header className={`sticky top-0 z-50 ${design.headerClass}`}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-[var(--site-primary)] flex items-center justify-center text-white font-bold text-sm">
-              {brandName.charAt(0)}
-            </div>
+            <Image
+              src="/logo.png"
+              alt={`${brandName} logo`}
+              width={40}
+              height={40}
+              priority
+              className="h-10 w-10 rounded-xl object-contain"
+            />
             <span className="text-xl font-semibold tracking-tight">{brandName}</span>
           </div>
 
@@ -338,7 +345,14 @@ export default function HomePage() {
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.about")}</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.blog")}</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.careers")}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{t("footer.contact")}</a></li>
+                <li>
+                  <a
+                    href={`mailto:${contactSupportEmail}`}
+                    className="hover:text-white transition-colors"
+                  >
+                    {t("footer.contact")}
+                  </a>
+                </li>
               </ul>
             </div>
             <div>

@@ -14,11 +14,11 @@ import {
   generateSubtleTexture,
 } from "../wardrobe/proceduralTextures";
 import { applyGrainRotation, type GrainDirection } from "../textureRepeat";
+import { publicApiUrl } from "@/lib/publicEnv";
 
 const PLACEHOLDER_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 function proxyUrl(url: string): string {
   if (url.startsWith("data:") || url.startsWith("blob:")) {
@@ -29,11 +29,11 @@ function proxyUrl(url: string): string {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return url;
     }
-    const apiOrigin = new URL(API_URL).origin;
+    const apiOrigin = new URL(publicApiUrl).origin;
     if (parsed.origin === apiOrigin || parsed.origin === window.location.origin) {
       return url;
     }
-    return `${API_URL}/image-proxy?url=${encodeURIComponent(url)}`;
+    return `${publicApiUrl}/image-proxy?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
   }

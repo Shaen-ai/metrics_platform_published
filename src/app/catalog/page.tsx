@@ -7,19 +7,8 @@ import Image from "next/image";
 import { useStore } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
-import { ArrowLeft, Home, Box, Search, SlidersHorizontal, Package, X, ShoppingCart, Plus } from "lucide-react";
-import dynamic from "next/dynamic";
+import { ArrowLeft, Home, Search, SlidersHorizontal, Package, X, ShoppingCart, Plus } from "lucide-react";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
-
-const ModelPreview = dynamic(() => import("@/components/ModelPreview"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-2">
-      <Box className="w-12 h-12 text-emerald-500 animate-pulse" />
-      <span className="text-xs font-medium text-emerald-600">Loading 3D...</span>
-    </div>
-  ),
-});
 
 type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc";
 type LayoutMode = "grid" | "list" | "masonry" | "magazine" | "showcase" | "reels" | "commerce" | "gallery";
@@ -68,9 +57,6 @@ function ItemMedia({ item, className }: { item: CatalogItem; className?: string 
       />
     );
   }
-  if (item.modelUrl && item.modelStatus === "done") {
-    return <ModelPreview modelUrl={item.modelUrl} />;
-  }
   return (
     <div className="w-full h-full flex items-center justify-center text-[var(--muted-foreground)]">
       <Package className="w-12 h-12 opacity-30" />
@@ -78,21 +64,10 @@ function ItemMedia({ item, className }: { item: CatalogItem; className?: string 
   );
 }
 
-function Badge3D({ item }: { item: CatalogItem }) {
-  if (!item.modelUrl || item.modelStatus !== "done") return null;
-  return (
-    <div className="absolute top-3 left-3 px-2.5 py-1 bg-emerald-500/90 backdrop-blur-sm text-white text-xs font-medium rounded-full flex items-center gap-1 shadow-sm pointer-events-none z-10">
-      <Box className="w-3 h-3" />
-      3D
-    </div>
-  );
-}
-
 // ─── Grid / Masonry / Magazine-sub card ─────────────────────────────────────
 
 function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: CatalogItem; index: number; aspectClass?: string }) {
-  const has3D = !item.images[0] && item.modelUrl && item.modelStatus === "done";
-  const { onPointerDown, onPointerMove, onPointerUp, nav } = useDragNav(item.id);
+  const { nav } = useDragNav(item.id);
   const addToCart = useStore((s) => s.addToCart);
 
   return (
@@ -100,14 +75,10 @@ function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: Catalog
       className="catalog-card-enter group rounded-2xl bg-white border border-[var(--border)] overflow-hidden
                  transition-all duration-300 hover:shadow-xl hover:-translate-y-1.5 hover:border-[var(--primary)]/30 cursor-pointer"
       style={{ animationDelay: `${index * 50}ms` }}
-      onPointerDown={has3D ? onPointerDown : undefined}
-      onPointerMove={has3D ? onPointerMove : undefined}
-      onPointerUp={has3D ? onPointerUp : undefined}
-      onClick={has3D ? undefined : nav}
+      onClick={nav}
     >
       <div className={`${aspectClass} relative bg-[var(--muted)] overflow-hidden`}>
         <ItemMedia item={item} />
-        <Badge3D item={item} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent
                         opacity-0 group-hover:opacity-100 transition-opacity duration-300
                         pointer-events-none flex items-end justify-center pb-5">
@@ -145,21 +116,16 @@ function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: Catalog
 // ─── Showcase / List / Commerce row card ────────────────────────────────────
 
 function ShowcaseCard({ item }: { item: CatalogItem }) {
-  const has3D = !item.images[0] && item.modelUrl && item.modelStatus === "done";
-  const { onPointerDown, onPointerMove, onPointerUp, nav } = useDragNav(item.id);
+  const { nav } = useDragNav(item.id);
 
   return (
     <div
       className="group flex overflow-hidden rounded-2xl bg-white border border-[var(--border)]
                  transition-all duration-300 hover:shadow-xl hover:border-[var(--primary)]/30 cursor-pointer"
-      onPointerDown={has3D ? onPointerDown : undefined}
-      onPointerMove={has3D ? onPointerMove : undefined}
-      onPointerUp={has3D ? onPointerUp : undefined}
-      onClick={has3D ? undefined : nav}
+      onClick={nav}
     >
       <div className="relative shrink-0 overflow-hidden bg-[var(--muted)]" style={{ width: "42%", minHeight: 148 }}>
         <ItemMedia item={item} />
-        <Badge3D item={item} />
       </div>
       <div className="flex-1 min-w-0 p-4 flex flex-col justify-between">
         <div>
@@ -185,23 +151,18 @@ function ShowcaseCard({ item }: { item: CatalogItem }) {
 // ─── Magazine hero ──────────────────────────────────────────────────────────
 
 function MagazineHero({ item }: { item: CatalogItem }) {
-  const has3D = !item.images[0] && item.modelUrl && item.modelStatus === "done";
-  const { onPointerDown, onPointerMove, onPointerUp, nav } = useDragNav(item.id);
+  const { nav } = useDragNav(item.id);
 
   return (
     <div
       className="group relative overflow-hidden rounded-2xl mb-5 cursor-pointer border border-[var(--border)]
                  transition-all duration-300 hover:shadow-xl"
       style={{ aspectRatio: "16/7", minHeight: 180 }}
-      onPointerDown={has3D ? onPointerDown : undefined}
-      onPointerMove={has3D ? onPointerMove : undefined}
-      onPointerUp={has3D ? onPointerUp : undefined}
-      onClick={has3D ? undefined : nav}
+      onClick={nav}
     >
       <div className="absolute inset-0 bg-[var(--muted)]">
         <ItemMedia item={item} />
       </div>
-      <Badge3D item={item} />
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)" }} />
       <div className="absolute top-3 left-3">
@@ -233,23 +194,18 @@ function MagazineHero({ item }: { item: CatalogItem }) {
 // ─── Reels: portrait cards ──────────────────────────────────────────────────
 
 function ReelCard({ item }: { item: CatalogItem }) {
-  const has3D = !item.images[0] && item.modelUrl && item.modelStatus === "done";
-  const { onPointerDown, onPointerMove, onPointerUp, nav } = useDragNav(item.id);
+  const { nav } = useDragNav(item.id);
 
   return (
     <div
       className="group relative overflow-hidden cursor-pointer rounded-2xl border border-[var(--border)]
                  transition-all duration-300 hover:shadow-xl"
       style={{ aspectRatio: "2/3" }}
-      onPointerDown={has3D ? onPointerDown : undefined}
-      onPointerMove={has3D ? onPointerMove : undefined}
-      onPointerUp={has3D ? onPointerUp : undefined}
-      onClick={has3D ? undefined : nav}
+      onClick={nav}
     >
       <div className="absolute inset-0 bg-[var(--muted)]">
         <ItemMedia item={item} />
       </div>
-      <Badge3D item={item} />
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0.08) 75%, transparent 100%)" }} />
       <div className="absolute bottom-0 left-0 right-0 p-3">
@@ -271,20 +227,15 @@ function ReelCard({ item }: { item: CatalogItem }) {
 // ─── Gallery: tight square grid with hover-reveal ───────────────────────────
 
 function GalleryCell({ item }: { item: CatalogItem }) {
-  const has3D = !item.images[0] && item.modelUrl && item.modelStatus === "done";
-  const { onPointerDown, onPointerMove, onPointerUp, nav } = useDragNav(item.id);
+  const { nav } = useDragNav(item.id);
 
   return (
     <div
       className="group relative overflow-hidden cursor-pointer bg-[var(--muted)]"
       style={{ aspectRatio: "1/1" }}
-      onPointerDown={has3D ? onPointerDown : undefined}
-      onPointerMove={has3D ? onPointerMove : undefined}
-      onPointerUp={has3D ? onPointerUp : undefined}
-      onClick={has3D ? undefined : nav}
+      onClick={nav}
     >
       <ItemMedia item={item} />
-      <Badge3D item={item} />
       <div className="absolute inset-0 flex flex-col items-center justify-end pb-3 px-2
                       opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)" }}>

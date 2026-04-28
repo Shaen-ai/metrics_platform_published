@@ -16,7 +16,7 @@ import { useKitchenStore } from "./store";
 import { useKitchenSheetLayout } from "../sheet/useKitchenSheetLayout";
 import SheetViewerModal from "../sheet/SheetViewerModal";
 import type { FloorOutlinePoint } from "../types";
-import { FLOOR_STYLE_TINTS } from "../types";
+import { createPlannerFloorMaterial } from "../laminateFloor";
 import {
   bboxSizeFromOutline,
   outlineBoundingBox,
@@ -32,36 +32,6 @@ const CM = 0.01;
 /** Minimum room depth (m) when footprint is very small. */
 const MIN_ROOM_DEPTH_M = 2.5;
 const EMPTY_EDGE_INDICES: number[] = [];
-
-// Wood texture pre-loading
-let _woodBaseImg: HTMLImageElement | null = null;
-let _woodNormalImg: HTMLImageElement | null = null;
-let _woodRoughImg: HTMLImageElement | null = null;
-if (typeof window !== "undefined") {
-  _woodBaseImg = new Image();
-  _woodBaseImg.crossOrigin = "anonymous";
-  _woodBaseImg.src = "/textures/wood/color.jpg";
-  _woodNormalImg = new Image();
-  _woodNormalImg.crossOrigin = "anonymous";
-  _woodNormalImg.src = "/textures/wood/normal.jpg";
-  _woodRoughImg = new Image();
-  _woodRoughImg.crossOrigin = "anonymous";
-  _woodRoughImg.src = "/textures/wood/roughness.jpg";
-}
-
-function texFromImage(
-  img: HTMLImageElement | null,
-  fallback: string,
-  loader: THREE.TextureLoader,
-  cb?: () => void,
-): THREE.Texture {
-  if (img?.complete && img.naturalWidth > 0) {
-    const t = new THREE.Texture(img);
-    t.needsUpdate = true;
-    return t;
-  }
-  return loader.load(fallback, cb);
-}
 
 function clamp255(v: number) {
   return Math.max(0, Math.min(255, Math.round(v)));
@@ -354,53 +324,12 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
     const repX = Math.max(1.45, floorW * 0.4);
     const repY = Math.max(1.45, floorD * 0.4);
 
-    const loader = new THREE.TextureLoader();
-    const onLoad = () => invalidate();
-    const normal = texFromImage(_woodNormalImg, "/textures/wood/normal.jpg", loader, onLoad);
-    const rough = texFromImage(_woodRoughImg, "/textures/wood/roughness.jpg", loader, onLoad);
-    [normal, rough].forEach((t) => {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(repX, repY);
-    });
-
-    const { hue, lift, tint } =
-      FLOOR_STYLE_TINTS[floorStyle] ?? { hue: "#c8a070", lift: 0, tint: "#ffffff" };
-    let map: THREE.Texture;
-    if (_woodBaseImg?.complete && _woodBaseImg.naturalWidth > 0) {
-      const canvas = document.createElement("canvas");
-      canvas.width = _woodBaseImg.width;
-      canvas.height = _woodBaseImg.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(_woodBaseImg, 0, 0);
-      ctx.globalCompositeOperation = "multiply";
-      ctx.globalAlpha = 0.34;
-      ctx.fillStyle = hue;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = "source-over";
-      const liftSoft = lift * 0.5;
-      if (liftSoft > 0) {
-        ctx.fillStyle = `rgba(255,255,255,${liftSoft})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      } else if (liftSoft < 0) {
-        ctx.fillStyle = `rgba(0,0,0,${-liftSoft})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-      map = new THREE.CanvasTexture(canvas);
-    } else {
-      map = loader.load("/textures/wood/color.jpg", onLoad);
-    }
-    map.wrapS = map.wrapT = THREE.RepeatWrapping;
-    map.repeat.set(repX, repY);
-    map.colorSpace = THREE.SRGBColorSpace;
-    const baseTint = new THREE.Color(tint);
-    baseTint.lerp(new THREE.Color("#f6f4f0"), 0.38);
-    return new THREE.MeshStandardMaterial({
-      map,
-      normalMap: normal,
-      roughnessMap: rough,
-      color: baseTint,
-      side: THREE.DoubleSide,
+    return createPlannerFloorMaterial({
+      floorStyle,
+      repeat: [repX, repY],
+      onTextureUpdate: invalidate,
+      toneMode: "multiply",
+      tintLerp: { color: "#f6f4f0", alpha: 0.38 },
       roughness: 0.78,
       metalness: 0.03,
       envMapIntensity: 0.55,

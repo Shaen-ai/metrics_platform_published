@@ -22,7 +22,6 @@ import {
 import type { WardrobeConfig } from "@/app/planner/wardrobe/types";
 import type { KitchenConfig } from "@/app/planner/kitchen/types";
 import { api, ApiNetworkError } from "./api";
-import { deletePlannerModuleGlb } from "./plannerLocalModels";
 import { normalizeApiModule } from "./normalizeApiModule";
 import { mapTemplateRowToMaterial, type PublicMaterialTemplateRow } from "./materialTemplateToMaterial";
 import { getPublishedAdminSlug } from "./tenant";
@@ -190,7 +189,6 @@ export const useStore = create<StoreState>()(
       },
 
       removePlannerCustomModule: (moduleId) => {
-        void deletePlannerModuleGlb(moduleId);
         set({
           plannerCustomModules: get().plannerCustomModules.filter((m) => m.id !== moduleId),
         });

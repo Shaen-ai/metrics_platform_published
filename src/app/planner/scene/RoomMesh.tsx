@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { usePlannerStore } from "../store/usePlannerStore";
 import type { FloorStyle, Room, RoomBeam } from "../types";
-import { FLOOR_STYLE_TINTS } from "../types";
+import { createPlannerFloorMaterial } from "../laminateFloor";
 import { maxCeilingY, ceilingYAtWall, ceilingY } from "../utils/roomCeiling";
 import { createWallPrismGeometry, createSlopedCeilingGeometry, type WallName as PrismWallName } from "../utils/wallPrism";
 import { createWallPrismWithHoles, wallHoleCutsForSegment } from "../utils/wallWithHolesCsg";
@@ -13,38 +13,6 @@ import { getWallBeamBox, getCeilingBeamBox } from "../utils/beams";
 import { ROOM_WALL_THICKNESS_M as WALL_THICKNESS } from "../constants/roomGeometry";
 import { roomUsesFloorOutline } from "../utils/floorOutline";
 import PolygonRoomMesh from "./PolygonRoomMesh";
-
-// Preload all wood textures at module scope so they're ready for synchronous use
-let _woodBaseImage: HTMLImageElement | null = null;
-let _woodNormalImage: HTMLImageElement | null = null;
-let _woodRoughnessImage: HTMLImageElement | null = null;
-if (typeof window !== "undefined") {
-  _woodBaseImage = new Image();
-  _woodBaseImage.crossOrigin = "anonymous";
-  _woodBaseImage.src = "/textures/wood/color.jpg";
-
-  _woodNormalImage = new Image();
-  _woodNormalImage.crossOrigin = "anonymous";
-  _woodNormalImage.src = "/textures/wood/normal.jpg";
-
-  _woodRoughnessImage = new Image();
-  _woodRoughnessImage.crossOrigin = "anonymous";
-  _woodRoughnessImage.src = "/textures/wood/roughness.jpg";
-}
-
-function _textureFromImage(
-  img: HTMLImageElement | null,
-  fallbackPath: string,
-  loader: THREE.TextureLoader,
-  onFallbackLoad?: () => void
-): THREE.Texture {
-  if (img?.complete && img.naturalWidth > 0) {
-    const tex = new THREE.Texture(img);
-    tex.needsUpdate = true;
-    return tex;
-  }
-  return loader.load(fallbackPath, onFallbackLoad);
-}
 
 type WallName = "front" | "back" | "left" | "right";
 
@@ -145,11 +113,46 @@ interface FloorPalette {
   grainAlpha: number;    // grain opacity multiplier
 }
 const FLOOR_PALETTES: Record<string, FloorPalette> = {
+  "laminate-blonde-oak": {
+    planks: ["#f2e5cd", "#eadcc4", "#f7ead3", "#e2d3ba", "#eee0c8", "#f8ecd8"],
+    grain: "#cdbb9f",
+    gap: "#dccdb8",
+    knot: "#d8c6a8",
+    grainAlpha: 0.08,
+  },
+  "laminate-whitewashed-wood": {
+    planks: ["#f4eee6", "#ebe4dc", "#f8f2ea", "#e1dad1", "#f0e9e0", "#faf5ed"],
+    grain: "#cfc6b9",
+    gap: "#ddd5ca",
+    knot: "#ded3c6",
+    grainAlpha: 0.08,
+  },
   "laminate-light-oak": {
     planks: ["#e8dcc8", "#dfd3bf", "#ede1d1", "#d8cdb9", "#e3d9c5", "#f0e4d6"],
     grain: "#c0b496",
     gap: "#c8bda5",
     knot: "#c9ba9e",
+    grainAlpha: 0.12,
+  },
+  "laminate-soft-beige": {
+    planks: ["#eadfce", "#e2d6c5", "#efe4d3", "#d9cebd", "#e7dbc9", "#f0e6d7"],
+    grain: "#c5b59e",
+    gap: "#d2c4b1",
+    knot: "#d5c6b0",
+    grainAlpha: 0.09,
+  },
+  "laminate-sand-oak": {
+    planks: ["#ead7b8", "#e2cca9", "#efdcbc", "#dac39f", "#e6d0ae", "#f2dfc3"],
+    grain: "#c5a87f",
+    gap: "#d1b891",
+    knot: "#d3b58c",
+    grainAlpha: 0.10,
+  },
+  "laminate-raw-oak": {
+    planks: ["#d9be98", "#cfb28a", "#dfc7a0", "#c8aa80", "#d4b88f", "#e2caa6"],
+    grain: "#ad8d60",
+    gap: "#bea279",
+    knot: "#c1a076",
     grainAlpha: 0.12,
   },
   "laminate-natural-oak": {
@@ -159,46 +162,137 @@ const FLOOR_PALETTES: Record<string, FloorPalette> = {
     knot: "#c0a878",
     grainAlpha: 0.14,
   },
-  "laminate-honey-oak": {
-    planks: ["#d8a854", "#d4a04a", "#e0b060", "#cc9840", "#dcac58", "#d0a048"],
-    grain: "#b07e2c",
-    gap: "#b89040",
-    knot: "#c09048",
+  "laminate-natural-pine": {
+    planks: ["#ead690", "#e2cc82", "#efdca0", "#d9c074", "#e6d18c", "#f1dda6"],
+    grain: "#b99d55",
+    gap: "#c8ad68",
+    knot: "#c3a05a",
+    grainAlpha: 0.11,
+  },
+  "laminate-warm-honey-oak": {
+    planks: ["#dca44f", "#d19843", "#e3ae5b", "#c98d38", "#d7a04b", "#e6b869"],
+    grain: "#a8752d",
+    gap: "#bc8840",
+    knot: "#be8438",
+    grainAlpha: 0.13,
+  },
+  "laminate-caramel": {
+    planks: ["#c98845", "#bd7b3a", "#d0934f", "#b37032", "#c48340", "#d59b5b"],
+    grain: "#8f5728",
+    gap: "#a66c38",
+    knot: "#9f622f",
     grainAlpha: 0.14,
   },
-  "laminate-walnut": {
-    planks: ["#6b4e3d", "#5a4032", "#7a5845", "#523a2a", "#734d38", "#5e4335"],
-    grain: "#42281a",
-    gap: "#48301e",
-    knot: "#523828",
-    grainAlpha: 0.16,
+  "laminate-chestnut": {
+    planks: ["#9e6339", "#925731", "#aa6f42", "#854d2c", "#9a5d35", "#b07848"],
+    grain: "#65361d",
+    gap: "#7a482a",
+    knot: "#754225",
+    grainAlpha: 0.15,
   },
-  "laminate-dark-brown": {
-    planks: ["#5c3d28", "#4e3220", "#6a472e", "#5a3a24", "#63412a", "#523622"],
-    grain: "#321a0c",
-    gap: "#38200e",
-    knot: "#3f2616",
-    grainAlpha: 0.16,
-  },
-  "laminate-gray-ash": {
-    planks: ["#a09890", "#989088", "#a89c94", "#908880", "#a09a92", "#9a928a"],
-    grain: "#686058",
-    gap: "#706860",
-    knot: "#787068",
+  "laminate-weathered-oak": {
+    planks: ["#b8aa98", "#aea08e", "#c1b3a0", "#a59684", "#b3a592", "#c8baa8"],
+    grain: "#887866",
+    gap: "#9a8b7b",
+    knot: "#94836f",
     grainAlpha: 0.12,
   },
-  "laminate-whitewashed": {
-    planks: ["#f5f0e8", "#efeae2", "#f8f4ec", "#e8e3da", "#f2ede5", "#faf6ee"],
-    grain: "#d0c8ba",
-    gap: "#dcd4c8",
-    knot: "#e0d8cc",
-    grainAlpha: 0.1,
+  "laminate-light-gray": {
+    planks: ["#d5d6d5", "#cbcaca", "#dedfdd", "#c3c4c3", "#d1d2d0", "#e2e3e1"],
+    grain: "#a9aba9",
+    gap: "#bfc0be",
+    knot: "#c3c4c2",
+    grainAlpha: 0.09,
   },
-  "laminate-cherry": {
-    planks: ["#8b3a2a", "#7e3425", "#964030", "#733028", "#8a3828", "#7a3222"],
-    grain: "#5a1e12",
-    gap: "#602418",
-    knot: "#6e2c1e",
+  "laminate-pearl-gray": {
+    planks: ["#ececea", "#e2e2df", "#f2f2ef", "#d9d9d5", "#e8e8e5", "#f5f5f2"],
+    grain: "#bfc0bb",
+    gap: "#d0d0cc",
+    knot: "#d2d2ce",
+    grainAlpha: 0.08,
+  },
+  "laminate-silver-ash": {
+    planks: ["#d6dada", "#ccd1d1", "#e0e4e3", "#c3c8c8", "#d2d7d6", "#e5e8e7"],
+    grain: "#a8adad",
+    gap: "#bcc1c0",
+    knot: "#c1c5c4",
+    grainAlpha: 0.09,
+  },
+  "laminate-mist-gray": {
+    planks: ["#eeeeea", "#e5e5e0", "#f4f4ef", "#dcddd8", "#e9e9e4", "#f7f7f2"],
+    grain: "#c5c5bf",
+    gap: "#d6d6d0",
+    knot: "#d8d8d2",
+    grainAlpha: 0.07,
+  },
+  "laminate-warm-gray": {
+    planks: ["#d6cec4", "#ccc4ba", "#ded7cd", "#c4bbb1", "#d2c9bf", "#e2dacf"],
+    grain: "#ada297",
+    gap: "#beb4a9",
+    knot: "#c3b8ab",
+    grainAlpha: 0.09,
+  },
+  "laminate-coastal-oak": {
+    planks: ["#dacbb7", "#d0c0ab", "#e2d3bf", "#c8b8a3", "#d6c6b1", "#e7dac8"],
+    grain: "#b09f88",
+    gap: "#c0af9a",
+    knot: "#c0ad94",
+    grainAlpha: 0.09,
+  },
+  "laminate-light-elm": {
+    planks: ["#e6d2ad", "#ddc79d", "#ead8b8", "#d4bd91", "#e1cca6", "#efddbf"],
+    grain: "#b99e6f",
+    gap: "#c9b080",
+    knot: "#c4a873",
+    grainAlpha: 0.10,
+  },
+  "laminate-toasted-almond": {
+    planks: ["#d1aa78", "#c99f6c", "#dab581", "#bf935f", "#cfa572", "#dfbd8c"],
+    grain: "#9b7145",
+    gap: "#b0875a",
+    knot: "#a97b4f",
+    grainAlpha: 0.12,
+  },
+  "laminate-golden-oak": {
+    planks: ["#d9a654", "#ce9948", "#e2b260", "#c38c3c", "#d4a04f", "#e5b96d"],
+    grain: "#a36f27",
+    gap: "#ba8438",
+    knot: "#b67b30",
+    grainAlpha: 0.13,
+  },
+  "laminate-smoked-beige": {
+    planks: ["#baa68f", "#af9a83", "#c3af98", "#a58f78", "#b5a088", "#c9b59e"],
+    grain: "#88725d",
+    gap: "#9d8873",
+    knot: "#967d66",
+    grainAlpha: 0.11,
+  },
+  "laminate-natural-hickory": {
+    planks: ["#c49363", "#b98757", "#ce9e6e", "#ad7b4d", "#bf8f5e", "#d3a879"],
+    grain: "#865a34",
+    gap: "#9d6e45",
+    knot: "#956239",
+    grainAlpha: 0.14,
+  },
+  "laminate-desert-oak": {
+    planks: ["#d9bb8f", "#cfb083", "#e0c49a", "#c6a678", "#d4b589", "#e5cca5"],
+    grain: "#aa8757",
+    gap: "#bd9d6f",
+    knot: "#b79061",
+    grainAlpha: 0.11,
+  },
+  "laminate-brushed-oak": {
+    planks: ["#b69062", "#aa8358", "#c09a6d", "#9f784e", "#b58b5e", "#c49f74"],
+    grain: "#7f5d3a",
+    gap: "#94734f",
+    knot: "#8f6844",
+    grainAlpha: 0.14,
+  },
+  "laminate-aged-oak": {
+    planks: ["#9f7e5c", "#927250", "#a98864", "#876847", "#9a7652", "#ad8d6a"],
+    grain: "#67472d",
+    gap: "#7a5a3a",
+    knot: "#755235",
     grainAlpha: 0.15,
   },
   "laminate-maple": {
@@ -208,20 +302,6 @@ const FLOOR_PALETTES: Record<string, FloorPalette> = {
     knot: "#d8c4a8",
     grainAlpha: 0.10,
   },
-  "laminate-ebony": {
-    planks: ["#2e2218", "#261c12", "#342620", "#221a10", "#2c2016", "#281e14"],
-    grain: "#181008",
-    gap: "#1c140a",
-    knot: "#201810",
-    grainAlpha: 0.18,
-  },
-  "laminate-slate": {
-    planks: ["#686870", "#606068", "#707078", "#585860", "#6c6c74", "#626268"],
-    grain: "#484850",
-    gap: "#505058",
-    knot: "#585860",
-    grainAlpha: 0.12,
-  },
   "laminate-bamboo": {
     planks: ["#e8d088", "#e0c878", "#ecd890", "#dcc070", "#e4cc80", "#d8c068"],
     grain: "#b8a050",
@@ -229,19 +309,26 @@ const FLOOR_PALETTES: Record<string, FloorPalette> = {
     knot: "#c8ac60",
     grainAlpha: 0.11,
   },
-  "laminate-light-gray": {
-    planks: ["#c8c8cc", "#c0c0c4", "#d0d0d4", "#b8b8bc", "#ccccd0", "#c4c4c8"],
-    grain: "#a0a0a4",
-    gap: "#a8a8ac",
-    knot: "#b0b0b4",
-    grainAlpha: 0.10,
+  "laminate-walnut": {
+    planks: ["#7d583d", "#704d35", "#8a6346", "#65442e", "#78543a", "#906a4d"],
+    grain: "#4c2f1d",
+    gap: "#5d3d29",
+    knot: "#5d3924",
+    grainAlpha: 0.15,
   },
   "laminate-charcoal": {
-    planks: ["#454550", "#3e3e48", "#4c4c56", "#383842", "#48484e", "#424248"],
-    grain: "#2a2a30",
-    gap: "#303038",
-    knot: "#363640",
-    grainAlpha: 0.14,
+    planks: ["#5d6066", "#53565c", "#676a70", "#4c4f55", "#595c62", "#6b6e74"],
+    grain: "#383b40",
+    gap: "#46494f",
+    knot: "#484b51",
+    grainAlpha: 0.12,
+  },
+  "laminate-rich-espresso": {
+    planks: ["#44291a", "#3a2115", "#4f3020", "#321c11", "#412718", "#563725"],
+    grain: "#221108",
+    gap: "#2c180d",
+    knot: "#2f1a0f",
+    grainAlpha: 0.17,
   },
 };
 
@@ -1011,67 +1098,21 @@ function RectangularRoomMesh() {
     wallMaterial.emissive.set(wallColor);
   }, [wallColor, wallMaterial]);
 
-  // ── Floor material (realistic wooden parquet — file-based textures) ──
+  // ── Floor material: file-backed wood textures with generated laminate fallback ──
   const floorStyle = room.floorStyle ?? "laminate-natural-oak";
 
-  const floorMaterial = useMemo(() => {
-    const loader = new THREE.TextureLoader();
-    const onFallbackLoad = () => invalidate();
-
-    const normal = _textureFromImage(_woodNormalImage, "/textures/wood/normal.jpg", loader, onFallbackLoad);
-    const roughness = _textureFromImage(_woodRoughnessImage, "/textures/wood/roughness.jpg", loader, onFallbackLoad);
-
-    [normal, roughness].forEach((t) => {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(2.25, 2.25);
-    });
-
-    const { hue, lift, tint } = FLOOR_STYLE_TINTS[floorStyle] ?? { hue: "#c8a070", lift: 0, tint: "#ffffff" };
-
-    let map: THREE.Texture;
-    if (_woodBaseImage?.complete && _woodBaseImage.naturalWidth > 0) {
-      const canvas = document.createElement("canvas");
-      const cw = _woodBaseImage.width;
-      const ch = _woodBaseImage.height;
-      canvas.width = cw;
-      canvas.height = ch;
-      const ctx = canvas.getContext("2d")!;
-
-      ctx.drawImage(_woodBaseImage, 0, 0);
-
-      ctx.globalCompositeOperation = "color";
-      ctx.fillStyle = hue;
-      ctx.fillRect(0, 0, cw, ch);
-
-      if (lift > 0) {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = `rgba(255,255,255,${lift})`;
-        ctx.fillRect(0, 0, cw, ch);
-      } else if (lift < 0) {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = `rgba(0,0,0,${-lift})`;
-        ctx.fillRect(0, 0, cw, ch);
-      }
-
-      map = new THREE.CanvasTexture(canvas);
-    } else {
-      map = loader.load("/textures/wood/color.jpg", onFallbackLoad);
-    }
-
-    map.wrapS = map.wrapT = THREE.RepeatWrapping;
-    map.repeat.set(2.25, 2.25);
-    map.colorSpace = THREE.SRGBColorSpace;
-
-    return new THREE.MeshStandardMaterial({
-      map,
-      normalMap: normal,
-      roughnessMap: roughness,
-      color: tint,
-      side: THREE.DoubleSide,
-      roughness: 0.7,
-      metalness: 0,
-    });
-  }, [floorStyle, invalidate]);
+  const floorMaterial = useMemo(
+    () =>
+      createPlannerFloorMaterial({
+        floorStyle,
+        repeat: [2.25, 2.25],
+        onTextureUpdate: invalidate,
+        toneMode: "color",
+        roughness: 0.7,
+        metalness: 0,
+      }),
+    [floorStyle, invalidate]
+  );
 
   useEffect(() => {
     invalidate();

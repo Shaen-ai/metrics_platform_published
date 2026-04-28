@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Environment } from "@react-three/drei";
 import { CanvasObject, RoomSettings } from "@/lib/types";
+import { createPlannerFloorMaterial } from "@/app/planner/laminateFloor";
 
 interface Viewer3DProps {
   objects: CanvasObject[];
@@ -122,21 +123,9 @@ export default function Viewer3D({ objects, viewMode = "dollhouse", roomSettings
   const cameraPosition = getCameraPosition();
 
   const floorMaterial = useMemo(() => {
-    const loader = new THREE.TextureLoader();
-    const color = loader.load("/textures/wood/color.jpg");
-    const normal = loader.load("/textures/wood/normal.jpg");
-    const roughness = loader.load("/textures/wood/roughness.jpg");
-
-    [color, normal, roughness].forEach((t) => {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(6, 6);
-    });
-    color.colorSpace = THREE.SRGBColorSpace;
-
-    return new THREE.MeshStandardMaterial({
-      map: color,
-      normalMap: normal,
-      roughnessMap: roughness,
+    return createPlannerFloorMaterial({
+      floorStyle: "laminate-natural-oak",
+      repeat: [6, 6],
       roughness: 0.7,
       metalness: 0,
     });

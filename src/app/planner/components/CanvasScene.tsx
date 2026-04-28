@@ -379,7 +379,7 @@ function SceneContent() {
       {/* A–D corner markers when Room Designer is open */}
       <RoomCornerLabels />
 
-      {/* Furniture items – wrapped in Suspense so GLB models load gracefully */}
+      {/* Furniture items */}
       <Suspense fallback={null}>
         {placedItems.map((item) => {
           const catalogItem = catalog.find((c) => c.id === item.catalogId);

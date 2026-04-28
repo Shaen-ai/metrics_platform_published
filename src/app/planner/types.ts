@@ -25,37 +25,71 @@ export interface Opening {
 
 /** Floor style options — laminate only, large rectangular planks (120–200cm × 15–25cm) */
 export type FloorStyle =
+  | "laminate-blonde-oak"
+  | "laminate-whitewashed-wood"
   | "laminate-light-oak"
+  | "laminate-soft-beige"
+  | "laminate-sand-oak"
+  | "laminate-raw-oak"
   | "laminate-natural-oak"
-  | "laminate-honey-oak"
-  | "laminate-walnut"
-  | "laminate-dark-brown"
-  | "laminate-gray-ash"
-  | "laminate-whitewashed"
-  | "laminate-cherry"
-  | "laminate-maple"
-  | "laminate-ebony"
-  | "laminate-slate"
-  | "laminate-bamboo"
+  | "laminate-natural-pine"
+  | "laminate-warm-honey-oak"
+  | "laminate-caramel"
+  | "laminate-chestnut"
+  | "laminate-weathered-oak"
   | "laminate-light-gray"
-  | "laminate-charcoal";
+  | "laminate-pearl-gray"
+  | "laminate-silver-ash"
+  | "laminate-mist-gray"
+  | "laminate-warm-gray"
+  | "laminate-coastal-oak"
+  | "laminate-light-elm"
+  | "laminate-toasted-almond"
+  | "laminate-golden-oak"
+  | "laminate-smoked-beige"
+  | "laminate-natural-hickory"
+  | "laminate-desert-oak"
+  | "laminate-brushed-oak"
+  | "laminate-aged-oak"
+  | "laminate-maple"
+  | "laminate-bamboo"
+  | "laminate-walnut"
+  | "laminate-charcoal"
+  | "laminate-rich-espresso";
 
 /** All laminate options with display labels */
 export const LAMINATE_OPTIONS: { value: FloorStyle; label: string }[] = [
-  { value: "laminate-light-oak", label: "Light Oak" },
+  { value: "laminate-blonde-oak", label: "Blonde Oak / Nordic White" },
+  { value: "laminate-whitewashed-wood", label: "Whitewashed Wood" },
+  { value: "laminate-soft-beige", label: "Creamy Beige" },
+  { value: "laminate-sand-oak", label: "Sandy Taupe" },
+  { value: "laminate-warm-gray", label: "Greige (Gray-Beige)" },
+  { value: "laminate-silver-ash", label: "Light Ash Gray" },
+  { value: "laminate-weathered-oak", label: "Weathered Oak" },
+  { value: "laminate-light-oak", label: "Light Natural Oak" },
+  { value: "laminate-raw-oak", label: "Raw Oak" },
   { value: "laminate-natural-oak", label: "Natural Oak" },
-  { value: "laminate-honey-oak", label: "Honey Oak" },
-  { value: "laminate-walnut", label: "Walnut" },
-  { value: "laminate-dark-brown", label: "Dark Brown" },
-  { value: "laminate-gray-ash", label: "Gray Ash" },
-  { value: "laminate-whitewashed", label: "Whitewashed" },
-  { value: "laminate-cherry", label: "Cherry" },
-  { value: "laminate-maple", label: "Maple" },
-  { value: "laminate-ebony", label: "Ebony" },
-  { value: "laminate-slate", label: "Slate" },
+  { value: "laminate-natural-pine", label: "Natural Pine" },
+  { value: "laminate-maple", label: "Natural Maple" },
   { value: "laminate-bamboo", label: "Bamboo" },
+  { value: "laminate-warm-honey-oak", label: "Warm Honey Oak" },
+  { value: "laminate-caramel", label: "Caramel" },
+  { value: "laminate-chestnut", label: "Chestnut" },
+  { value: "laminate-coastal-oak", label: "Coastal Oak" },
+  { value: "laminate-light-elm", label: "Light Elm" },
+  { value: "laminate-toasted-almond", label: "Toasted Almond" },
+  { value: "laminate-golden-oak", label: "Golden Oak" },
+  { value: "laminate-smoked-beige", label: "Smoked Beige" },
+  { value: "laminate-natural-hickory", label: "Natural Hickory" },
+  { value: "laminate-desert-oak", label: "Desert Oak" },
+  { value: "laminate-brushed-oak", label: "Brushed Oak" },
+  { value: "laminate-aged-oak", label: "Aged Oak" },
   { value: "laminate-light-gray", label: "Light Gray" },
-  { value: "laminate-charcoal", label: "Charcoal" },
+  { value: "laminate-pearl-gray", label: "Pearl Gray" },
+  { value: "laminate-mist-gray", label: "Mist Gray" },
+  { value: "laminate-walnut", label: "Warm Deep Brown / Walnut" },
+  { value: "laminate-charcoal", label: "Charcoal / Dark Gray" },
+  { value: "laminate-rich-espresso", label: "Rich Espresso" },
 ];
 
 /**
@@ -71,20 +105,37 @@ export interface FloorTint {
 }
 
 export const FLOOR_STYLE_TINTS: Record<FloorStyle, FloorTint> = {
-  "laminate-whitewashed":  { hue: "#d0c8c0", lift: 0.45, tint: "#ffffff" },
+  "laminate-blonde-oak":    { hue: "#efe1c8", lift: 0.42, tint: "#ffffff" },
+  "laminate-whitewashed-wood": { hue: "#ded6ca", lift: 0.46, tint: "#ffffff" },
   "laminate-light-oak":    { hue: "#dcc090", lift: 0.30, tint: "#ffffff" },
+  "laminate-soft-beige":   { hue: "#ddd0bc", lift: 0.36, tint: "#ffffff" },
+  "laminate-sand-oak":     { hue: "#e4c99e", lift: 0.28, tint: "#ffffff" },
+  "laminate-raw-oak":      { hue: "#d7b98e", lift: 0.20, tint: "#ffffff" },
   "laminate-natural-oak":  { hue: "#d0a860", lift: 0.10, tint: "#ffffff" },
-  "laminate-honey-oak":    { hue: "#e0a020", lift: 0.05, tint: "#ffffff" },
-  "laminate-gray-ash":     { hue: "#989090", lift: 0.20, tint: "#f0f0f0" },
-  "laminate-walnut":       { hue: "#8a5a30", lift: -0.15, tint: "#ffffff" },
-  "laminate-dark-brown":   { hue: "#603020", lift: -0.30, tint: "#ffffff" },
-  "laminate-cherry":       { hue: "#b04828", lift: -0.10, tint: "#ffffff" },
+  "laminate-natural-pine": { hue: "#e2c783", lift: 0.18, tint: "#ffffff" },
+  "laminate-warm-honey-oak": { hue: "#d89b42", lift: 0.10, tint: "#ffffff" },
+  "laminate-caramel":      { hue: "#c7833d", lift: 0.02, tint: "#ffffff" },
+  "laminate-chestnut":     { hue: "#9a5f36", lift: -0.05, tint: "#ffffff" },
+  "laminate-weathered-oak": { hue: "#b3a18d", lift: 0.20, tint: "#f7f5f1" },
+  "laminate-light-gray":   { hue: "#c8c9c8", lift: 0.38, tint: "#ffffff" },
+  "laminate-pearl-gray":   { hue: "#d8d8d4", lift: 0.44, tint: "#ffffff" },
+  "laminate-silver-ash":   { hue: "#cfd2d1", lift: 0.34, tint: "#ffffff" },
+  "laminate-mist-gray":    { hue: "#deded9", lift: 0.48, tint: "#ffffff" },
+  "laminate-warm-gray":    { hue: "#c8c0b7", lift: 0.34, tint: "#fbfaf7" },
+  "laminate-coastal-oak":  { hue: "#d7c7b2", lift: 0.32, tint: "#ffffff" },
+  "laminate-light-elm":    { hue: "#e3cfaa", lift: 0.26, tint: "#ffffff" },
+  "laminate-toasted-almond": { hue: "#d0a875", lift: 0.16, tint: "#ffffff" },
+  "laminate-golden-oak":   { hue: "#d6a14f", lift: 0.08, tint: "#ffffff" },
+  "laminate-smoked-beige": { hue: "#b8a48e", lift: 0.18, tint: "#fbfaf7" },
+  "laminate-natural-hickory": { hue: "#c18f5f", lift: 0.05, tint: "#ffffff" },
+  "laminate-desert-oak":   { hue: "#d6b58a", lift: 0.22, tint: "#ffffff" },
+  "laminate-brushed-oak":  { hue: "#b89264", lift: 0.02, tint: "#ffffff" },
+  "laminate-aged-oak":     { hue: "#9f7b55", lift: -0.04, tint: "#ffffff" },
   "laminate-maple":        { hue: "#e0c898", lift: 0.25,  tint: "#ffffff" },
-  "laminate-ebony":        { hue: "#2a1a10", lift: -0.40, tint: "#ffffff" },
-  "laminate-slate":        { hue: "#58585e", lift: -0.05, tint: "#e8e8e8" },
   "laminate-bamboo":       { hue: "#d8c060", lift: 0.15,  tint: "#ffffff" },
-  "laminate-light-gray":   { hue: "#b8b8b8", lift: 0.35,  tint: "#f4f4f4" },
-  "laminate-charcoal":     { hue: "#404048", lift: -0.20, tint: "#e0e0e0" },
+  "laminate-walnut":       { hue: "#7d5638", lift: -0.12, tint: "#ffffff" },
+  "laminate-charcoal":     { hue: "#50535a", lift: -0.08, tint: "#e8e8e8" },
+  "laminate-rich-espresso": { hue: "#432818", lift: -0.28, tint: "#ffffff" },
 };
 
 /**
@@ -173,7 +224,9 @@ export interface PlannerCatalogItem {
   depth: number;   // meters
   height: number;  // meters
   color: string;   // hex color
-  modelPath?: string; // path to GLB model (relative to public/)
+  imageUrl?: string;
+  modelUrl?: string;
+  modelStatus?: "queued" | "processing" | "done" | "failed";
   wallMounted?: boolean;
   mountHeight?: number; // meters above floor for wall-mounted items
 }

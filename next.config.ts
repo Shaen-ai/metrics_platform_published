@@ -25,6 +25,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "tunzone.com",
+      },
+      {
+        protocol: "https",
         hostname: "**",
       },
       {
@@ -42,6 +46,10 @@ const nextConfig: NextConfig = {
       {
         source: "/storage/:path*",
         destination: `${API_ORIGIN}/storage/:path*`,
+      },
+      {
+        source: "/files/:path*",
+        destination: `${API_ORIGIN}/files/:path*`,
       },
     ];
   },

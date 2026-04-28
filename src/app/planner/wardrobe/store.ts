@@ -268,12 +268,12 @@ const defaultConfig: WardrobeConfig = {
 
 const defaultRoom: RoomSettings = {
   wallColor: "#e8e6e2",
-  floorStyle: "laminate-light-gray",
+  floorStyle: "laminate-soft-beige",
 };
 
 function normalizeWardrobeRoom(room?: RoomSettings): RoomSettings {
   const r = { ...defaultRoom, ...(room ?? {}) };
-  r.floorStyle = "laminate-light-gray";
+  r.floorStyle = "laminate-soft-beige";
   return r;
 }
 

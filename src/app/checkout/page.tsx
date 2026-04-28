@@ -32,9 +32,7 @@ import {
   CreditCard,
   Package,
 } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001";
+import { publicApiUrl, publishedSiteUrl } from "@/lib/publicEnv";
 
 function describeCartForPaypal(cart: CartLine[]): string {
   if (cart.length === 0) return "Order";
@@ -187,9 +185,9 @@ export default function CheckoutPage() {
         item_name: itemName,
         amount: total.toFixed(2),
         currency_code: currency,
-        return: `${SITE_URL}/checkout/success?order_id=${order.id}`,
-        cancel_return: `${SITE_URL}/checkout/cancel`,
-        notify_url: `${API_URL}/paypal/ipn`,
+        return: `${publishedSiteUrl}/checkout/success?order_id=${order.id}`,
+        cancel_return: `${publishedSiteUrl}/checkout/cancel`,
+        notify_url: `${publicApiUrl}/paypal/ipn`,
         custom: order.id,
         no_shipping: "1",
         no_note: "1",
@@ -384,7 +382,6 @@ export default function CheckoutPage() {
                   if (line.kind === "module-planner") {
                     const { name, price, quantity, lineId, module, selection, breakdown } = line;
                     const dims = `${module.dimensions.width}×${module.dimensions.height}×${module.dimensions.depth} ${module.dimensions.unit}`;
-                    const localNote = module.plannerLocalModel ? " · GLB on this device" : "";
                     const templateNote =
                       module.isConfigurableTemplate && selection
                         ? " · Configured template"
@@ -398,7 +395,6 @@ export default function CheckoutPage() {
                           <h3 className="font-medium text-sm line-clamp-2">{name}</h3>
                           <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
                             {module.isConfigurableTemplate ? "Template" : "Custom module"} · {dims}
-                            {localNote}
                             {templateNote}
                           </p>
                           {breakdown && (

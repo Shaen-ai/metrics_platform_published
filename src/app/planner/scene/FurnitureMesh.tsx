@@ -1,10 +1,12 @@
 "use client";
 
-import { Component, Suspense, useRef, useEffect, useMemo, memo, type ReactNode } from "react";
+import { useRef, useEffect, useMemo, useState, memo } from "react";
 import * as THREE from "three";
-import { useGLTF, Edges } from "@react-three/drei";
+import { Edges } from "@react-three/drei";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { PlacedItem, PlannerCatalogItem } from "../types";
 import { useStore } from "@/lib/store";
+import { publicApiUrl } from "@/lib/publicEnv";
 import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import {
   materialsFromStore,
@@ -16,23 +18,6 @@ import {
 import { WardrobeModulesInRoom } from "../wardrobe/WardrobeModulesInRoom";
 import type { WardrobeRoomEmbedValue } from "../wardrobe/WardrobeRoomContext";
 
-class ModelErrorBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode },
-  { hasError: boolean }
-> {
-  state = { hasError: false };
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(error: unknown) {
-    console.warn("[FurnitureMesh] Model failed to load, using box fallback:", error);
-  }
-  render() {
-    if (this.state.hasError) return this.props.fallback;
-    return this.props.children;
-  }
-}
-
 interface FurnitureMeshProps {
   item: PlacedItem;
   catalogItem: PlannerCatalogItem;
@@ -40,121 +25,19 @@ interface FurnitureMeshProps {
   isLocked?: boolean;
 }
 
-// ── GLB Model renderer ─────────────────────────────────────────────────
-
-const GlbModel = memo(function GlbModel({ item, catalogItem, isSelected, isLocked }: FurnitureMeshProps) {
-  const groupRef = useRef<THREE.Group>(null);
-  const { scene } = useGLTF(catalogItem.modelPath!);
-  const width = item.width ?? catalogItem.width;
-  const depth = item.depth ?? catalogItem.depth;
-  const height = item.height ?? catalogItem.height;
-
-  // Clone the scene and scale it to match catalog dimensions
-  const clonedScene = useMemo(() => {
-    const clone = scene.clone(true);
-
-    // Deep-clone materials so each instance can be independent
-    clone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        if (Array.isArray(mesh.material)) {
-          mesh.material = mesh.material.map((m) => m.clone());
-        } else if (mesh.material) {
-          mesh.material = mesh.material.clone();
-        }
-      }
-    });
-
-    // Compute bounding box of the original model
-    const bbox = new THREE.Box3().setFromObject(clone);
-    const size = bbox.getSize(new THREE.Vector3());
-    const center = bbox.getCenter(new THREE.Vector3());
-
-    // Scale to match catalog dimensions
-    const scaleX = size.x > 0.001 ? width / size.x : 1;
-    const scaleY = size.y > 0.001 ? height / size.y : 1;
-    const scaleZ = size.z > 0.001 ? depth / size.z : 1;
-
-    clone.scale.set(scaleX, scaleY, scaleZ);
-
-    // Center horizontally, bottom at Y=0
-    clone.position.set(
-      -center.x * scaleX,
-      -bbox.min.y * scaleY,
-      -center.z * scaleZ
-    );
-
-    return clone;
-  }, [scene, width, depth, height]);
-
-  // Precompute edge geometries from every mesh in the model so we can
-  // render the real contour of the furniture when selected.
-  const edgeGeometries = useMemo(() => {
-    // Force matrix computation on the detached scene graph
-    clonedScene.updateMatrixWorld(true);
-
-    const edges: THREE.BufferGeometry[] = [];
-    clonedScene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        if (mesh.geometry) {
-          const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 15);
-          // Bake the mesh's world transform so edges align with the model
-          edgeGeo.applyMatrix4(mesh.matrixWorld);
-          edges.push(edgeGeo);
-        }
-      }
-    });
-
-    return edges;
-  }, [clonedScene]);
-
-  // Tag every child mesh with the item ID so the DragController raycaster
-  // can identify which furniture piece was clicked/dragged.
-  useEffect(() => {
-    if (!groupRef.current) return;
-    groupRef.current.traverse((child) => {
-      child.userData.itemId = item.id;
-      if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-  }, [item.id, clonedScene]);
-
-  const yPos = item.positionY ?? 0;
-
-  return (
-    <group
-      position={[item.position.x, yPos, item.position.z]}
-      rotation={[0, item.rotationY, 0]}
-    >
-      <group ref={groupRef}>
-        <primitive object={clonedScene} />
-
-        {/* ── Selection / lock outline following actual model contour ── */}
-        {(isSelected || isLocked) &&
-          edgeGeometries.map((geo, i) => (
-            <lineSegments key={i} geometry={geo}>
-              <lineBasicMaterial
-                color={isLocked ? "#F44336" : "#FFC107"}
-                transparent
-                opacity={isSelected ? 0.8 : 0.4}
-              />
-            </lineSegments>
-          ))}
-      </group>
-
-      {/* Direction indicator (front arrow) */}
-      {isSelected && (
-        <mesh position={[0, 0.003, -depth / 2 - 0.08]}>
-          <coneGeometry args={[0.06, 0.12, 3]} />
-          <meshBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
-        </mesh>
-      )}
-    </group>
-  );
-});
+function plannerModelUrl(url: string): string {
+  if (typeof window === "undefined") return url;
+  try {
+    const apiOrigin = new URL(publicApiUrl).origin;
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === apiOrigin && (parsed.pathname.startsWith("/storage/") || parsed.pathname.startsWith("/files/"))) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return parsed.href;
+  } catch {
+    return url;
+  }
+}
 
 // ── Fallback box renderer (items without a model) ──────────────────────
 
@@ -189,6 +72,104 @@ const BoxFallback = memo(function BoxFallback({ item, catalogItem, isSelected, i
       {/* Direction indicator (front arrow) */}
       {isSelected && (
         <mesh position={[0, -height / 2 + 0.003, -depth / 2 - 0.05]}>
+          <coneGeometry args={[0.06, 0.12, 3]} />
+          <meshBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
+        </mesh>
+      )}
+    </group>
+  );
+});
+
+const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProps) {
+  const { item, catalogItem, isSelected, isLocked } = props;
+  const [model, setModel] = useState<{ url?: string; scene: THREE.Group | null; failed: boolean }>({
+    url: catalogItem.modelUrl,
+    scene: null,
+    failed: false,
+  });
+  const width = item.width ?? catalogItem.width;
+  const depth = item.depth ?? catalogItem.depth;
+  const height = item.height ?? catalogItem.height;
+  const url = catalogItem.modelUrl;
+
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+
+    const loader = new GLTFLoader();
+    loader.load(
+      plannerModelUrl(url),
+      (gltf) => {
+        if (cancelled) return;
+        setModel({ url, scene: gltf.scene.clone(true), failed: false });
+      },
+      undefined,
+      () => {
+        if (!cancelled) setModel({ url, scene: null, failed: true });
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const scene = model.url === url ? model.scene : null;
+  const failed = model.url === url ? model.failed : false;
+
+  useEffect(() => {
+    if (!scene) return;
+    scene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.userData.itemId = item.id;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+  }, [item.id, scene]);
+
+  const fit = useMemo(() => {
+    if (!scene) return null;
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const sx = size.x > 0 ? width / size.x : 1;
+    const sy = size.y > 0 ? height / size.y : 1;
+    const sz = size.z > 0 ? depth / size.z : 1;
+    const scale = Math.min(sx, sy, sz);
+    return { box, center, scale: Number.isFinite(scale) && scale > 0 ? scale : 1 };
+  }, [depth, height, scene, width]);
+
+  if (!url || failed || !scene || !fit) {
+    return <BoxFallback {...props} />;
+  }
+
+  const yPos = item.positionY ?? 0;
+
+  return (
+    <group
+      position={[item.position.x, yPos, item.position.z]}
+      rotation={[0, item.rotationY, 0]}
+    >
+      <primitive
+        object={scene}
+        position={[
+          -fit.center.x * fit.scale,
+          -fit.box.min.y * fit.scale,
+          -fit.center.z * fit.scale,
+        ]}
+        scale={fit.scale}
+      />
+      {(isSelected || isLocked) && (
+        <group position={[0, height / 2, 0]}>
+          <lineSegments>
+            <edgesGeometry args={[new THREE.BoxGeometry(width, height, depth)]} />
+            <lineBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
+          </lineSegments>
+        </group>
+      )}
+      {isSelected && (
+        <mesh position={[0, 0.003, -depth / 2 - 0.08]}>
           <coneGeometry args={[0.06, 0.12, 3]} />
           <meshBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
         </mesh>
@@ -277,14 +258,8 @@ export default memo(function FurnitureMesh(props: FurnitureMeshProps) {
   if (props.item.wardrobeConfig) {
     return <PlacedWardrobeMesh {...props} />;
   }
-  if (props.catalogItem.modelPath) {
-    return (
-      <ModelErrorBoundary fallback={<BoxFallback {...props} />}>
-        <Suspense fallback={<BoxFallback {...props} />}>
-          <GlbModel {...props} />
-        </Suspense>
-      </ModelErrorBoundary>
-    );
+  if (props.catalogItem.modelUrl) {
+    return <CatalogModelMesh {...props} />;
   }
   return <BoxFallback {...props} />;
 });

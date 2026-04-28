@@ -12,7 +12,7 @@ import { useWardrobeSheetLayout } from "../sheet/useWardrobeSheetLayout";
 import SheetViewerModal from "../sheet/SheetViewerModal";
 import { sortPlacementsWardrobeFrontOrder } from "../sheet/wardrobeSheetPlacementSort";
 import { wardrobePanelFrontOrderKey } from "../sheet/wardrobePanels";
-import { FLOOR_STYLE_TINTS } from "../types";
+import { createPlannerFloorMaterial } from "../laminateFloor";
 import WardrobeFrame3D from "./WardrobeFrame3D";
 import WardrobeBase3D from "./WardrobeBase3D";
 import WardrobeInterior3D from "./WardrobeInterior3D";
@@ -28,37 +28,6 @@ const CM = 0.01;
 // Stable reference so Zustand selectors returning the fallback don't trip
 // React's "getSnapshot should be cached" infinite-loop guard.
 const EMPTY_ADDONS: import("./types").WardrobeAddon[] = [];
-
-/* ── Wood texture preloading (same approach as room planner) ──────── */
-
-let _woodBaseImage: HTMLImageElement | null = null;
-let _woodNormalImage: HTMLImageElement | null = null;
-let _woodRoughnessImage: HTMLImageElement | null = null;
-if (typeof window !== "undefined") {
-  _woodBaseImage = new Image();
-  _woodBaseImage.crossOrigin = "anonymous";
-  _woodBaseImage.src = "/textures/wood/color.jpg";
-  _woodNormalImage = new Image();
-  _woodNormalImage.crossOrigin = "anonymous";
-  _woodNormalImage.src = "/textures/wood/normal.jpg";
-  _woodRoughnessImage = new Image();
-  _woodRoughnessImage.crossOrigin = "anonymous";
-  _woodRoughnessImage.src = "/textures/wood/roughness.jpg";
-}
-
-function _textureFromImage(
-  img: HTMLImageElement | null,
-  fallbackPath: string,
-  loader: THREE.TextureLoader,
-  onLoad?: () => void,
-): THREE.Texture {
-  if (img?.complete && img.naturalWidth > 0) {
-    const tex = new THREE.Texture(img);
-    tex.needsUpdate = true;
-    return tex;
-  }
-  return loader.load(fallbackPath, onLoad);
-}
 
 function hexToRgb(hex: string): [number, number, number] {
   return [
@@ -163,50 +132,13 @@ function Room() {
   );
 
   const floorMaterial = useMemo(() => {
-    const loader = new THREE.TextureLoader();
-    const onFallback = () => invalidate();
-
-    const normal = _textureFromImage(_woodNormalImage, "/textures/wood/normal.jpg", loader, onFallback);
-    const roughness = _textureFromImage(_woodRoughnessImage, "/textures/wood/roughness.jpg", loader, onFallback);
-    [normal, roughness].forEach((t) => {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(2.25, 2.25);
-    });
-
-    const { hue, lift, tint } = FLOOR_STYLE_TINTS[floorStyle] ?? { hue: "#c8a070", lift: 0, tint: "#ffffff" };
-
-    let map: THREE.Texture;
-    if (_woodBaseImage?.complete && _woodBaseImage.naturalWidth > 0) {
-      const canvas = document.createElement("canvas");
-      const cw = _woodBaseImage.width;
-      const ch = _woodBaseImage.height;
-      canvas.width = cw;
-      canvas.height = ch;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(_woodBaseImage, 0, 0);
-      ctx.globalCompositeOperation = "color";
-      ctx.fillStyle = hue;
-      ctx.fillRect(0, 0, cw, ch);
-      if (lift > 0) {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = `rgba(255,255,255,${lift})`;
-        ctx.fillRect(0, 0, cw, ch);
-      } else if (lift < 0) {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = `rgba(0,0,0,${-lift})`;
-        ctx.fillRect(0, 0, cw, ch);
-      }
-      map = new THREE.CanvasTexture(canvas);
-    } else {
-      map = loader.load("/textures/wood/color.jpg", onFallback);
-    }
-    map.wrapS = map.wrapT = THREE.RepeatWrapping;
-    map.repeat.set(2.25, 2.25);
-    map.colorSpace = THREE.SRGBColorSpace;
-
-    return new THREE.MeshStandardMaterial({
-      map, normalMap: normal, roughnessMap: roughness,
-      color: tint, side: THREE.DoubleSide, roughness: 0.7, metalness: 0,
+    return createPlannerFloorMaterial({
+      floorStyle,
+      repeat: [2.25, 2.25],
+      onTextureUpdate: invalidate,
+      toneMode: "color",
+      roughness: 0.7,
+      metalness: 0,
     });
   }, [floorStyle, invalidate]);
 

@@ -1,5 +1,7 @@
 /** Server-side plan checks against Laravel API. */
 
+import { getPublicApiUrl } from "./publicEnv";
+
 export type PublicEntitlements = {
   planTier: string;
   trialEndsAt?: string | null;
@@ -12,10 +14,7 @@ export type PublicEntitlements = {
 };
 
 function laravelApiBase(): string {
-  const raw =
-    process.env.LARAVEL_API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://127.0.0.1:8000/api";
+  const raw = process.env.LARAVEL_API_URL || getPublicApiUrl();
   return raw.replace(/\/$/, "");
 }
 

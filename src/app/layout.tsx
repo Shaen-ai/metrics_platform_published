@@ -11,6 +11,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Tunzone - Design Furniture, Build Dreams",
   description: "The all-in-one platform for furniture manufacturers. Create planners, publish your catalog, and let customers design their perfect rooms.",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

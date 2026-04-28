@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { usePlannerStore } from "../store/usePlannerStore";
 import type { FloorOutlinePoint, Opening, Room } from "../types";
-import { FLOOR_STYLE_TINTS } from "../types";
+import { createPlannerFloorMaterial } from "../laminateFloor";
 import { ROOM_WALL_THICKNESS_M as WALL_THICKNESS } from "../constants/roomGeometry";
 import {
   createPolygonWallSegmentWithHoles,
@@ -465,18 +465,18 @@ export default function PolygonRoomMesh() {
   const openEdge = new Set(room.openEdgeIndices ?? []);
 
   const floorStyle = room.floorStyle ?? "laminate-natural-oak";
-  const { tint } = FLOOR_STYLE_TINTS[floorStyle] ?? { tint: "#ffffff" };
 
-  const floorMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: tint,
-        roughness: 0.75,
-        metalness: 0,
-        side: THREE.DoubleSide,
-      }),
-    [tint]
-  );
+  const floorMaterial = useMemo(() => {
+    const repX = Math.max(1.45, w * 0.4);
+    const repY = Math.max(1.45, d * 0.4);
+    return createPlannerFloorMaterial({
+      floorStyle,
+      repeat: [repX, repY],
+      onTextureUpdate: invalidate,
+      roughness: 0.75,
+      metalness: 0,
+    });
+  }, [floorStyle, w, d, invalidate]);
   useEffect(() => () => floorMaterial.dispose(), [floorMaterial]);
 
   const wallColor = room.wallColor ?? "#fafafa";

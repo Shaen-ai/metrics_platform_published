@@ -1763,10 +1763,10 @@ function RoomPanel() {
         </span>
         <div className="room-floor-grid">
           <FloorStyleSwatch
-            style="laminate-light-gray"
+            style="laminate-soft-beige"
             label="Neutral"
-            selected={floorStyle === "laminate-light-gray"}
-            onClick={() => setFloorStyle("laminate-light-gray")}
+            selected={floorStyle === "laminate-soft-beige"}
+            onClick={() => setFloorStyle("laminate-soft-beige")}
           />
         </div>
       </div>

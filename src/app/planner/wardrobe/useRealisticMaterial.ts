@@ -15,6 +15,7 @@ import {
   setWoodMapRepeatForPanel,
 } from "../textureRepeat";
 import type { PanelRenderInfo } from "../sheet/useWardrobePanelPlacements";
+import { publicApiUrl } from "@/lib/publicEnv";
 
 export type { PanelTextureRepeatOpts };
 export { setWoodMapRepeatForPanel };
@@ -22,7 +23,6 @@ export { setWoodMapRepeatForPanel };
 const PLACEHOLDER_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 /**
  * Route external image URLs through the backend proxy to avoid CORS issues
@@ -38,11 +38,11 @@ function proxyUrl(url: string): string {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return url;
     }
-    const apiOrigin = new URL(API_URL).origin;
+    const apiOrigin = new URL(publicApiUrl).origin;
     if (parsed.origin === apiOrigin || parsed.origin === window.location.origin) {
       return url;
     }
-    return `${API_URL}/image-proxy?url=${encodeURIComponent(url)}`;
+    return `${publicApiUrl}/image-proxy?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
   }

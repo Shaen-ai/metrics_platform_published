@@ -215,7 +215,7 @@ export default function Sidebar() {
           </p>
         )}
         {roomSetupExpanded && (
-          <>
+          <div className="sidebar-room-setup-content">
             <div className="sidebar-room-setup-subheading flex items-center justify-between gap-2">
               <span>Dimensions</span>
               <LengthUnitToggle />
@@ -319,13 +319,7 @@ export default function Sidebar() {
                 <label className="block text-xs text-[var(--muted-foreground)] mb-1.5">
                   Floor style — Laminate planks
                 </label>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(4, 1fr)",
-                    gap: 8,
-                  }}
-                >
+                <div className="floor-style-grid">
                   {LAMINATE_OPTIONS.map(({ value, label }) => (
                     <FloorSwatch
                       key={value}
@@ -338,7 +332,7 @@ export default function Sidebar() {
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 

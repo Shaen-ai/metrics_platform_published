@@ -17,6 +17,10 @@ export interface CatalogItem {
   subModeId: string;
   name: string;
   model?: string;
+  modelUrl?: string;
+  modelStatus?: "queued" | "processing" | "done" | "failed";
+  modelJobId?: string;
+  modelError?: string | null;
   description: string;
   category: string;
   price: number;
@@ -36,8 +40,6 @@ export interface CatalogItem {
   };
   availableColors?: { name: string; hex: string }[];
   deliveryDays: number;
-  modelUrl?: string;
-  modelStatus?: 'queued' | 'processing' | 'done' | 'failed';
   wallMounted?: boolean;
   mountHeight?: number | null;
   isActive: boolean;
@@ -111,15 +113,11 @@ export interface Module {
   };
   compatibleWith: string[];
   subModeId: string;
-  modelUrl?: string;
-  modelStatus?: 'queued' | 'processing' | 'done' | 'failed';
   placementType: 'floor' | 'wall';
   /** Browser-only modules from Module Planner (not from admin API). */
   source?: 'planner';
   cabinetMaterialId?: string;
   doorMaterialId?: string;
-  /** GLB stored in IndexedDB on this device (see plannerLocalModels). */
-  plannerLocalModel?: boolean;
   /** API module: enables template configurator on the published site. */
   isConfigurableTemplate?: boolean;
   pricingBodyWeight?: number;

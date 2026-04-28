@@ -70,7 +70,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 5.5,
       depth: 5,
       height: 2.8,
-      floorStyle: "laminate-honey-oak",
+      floorStyle: "laminate-natural-pine",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: 0.4, width: 0.9 },
         { id: uuidv4(), type: "door", wall: "left", position: -0.3, width: 0.8 },
@@ -155,7 +155,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 2.5,
       depth: 3,
       height: 2.8,
-      floorStyle: "laminate-whitewashed",
+      floorStyle: "laminate-soft-beige",
       wallColor: "#f0f4f8",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: 0.3, width: 0.7 },
@@ -171,7 +171,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 3.5,
       depth: 3.5,
       height: 2.8,
-      floorStyle: "laminate-whitewashed",
+      floorStyle: "laminate-sand-oak",
       wallColor: "#f0f4f8",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: 0.3, width: 0.8 },
@@ -187,7 +187,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 2,
       depth: 3.5,
       height: 2.8,
-      floorStyle: "laminate-gray-ash",
+      floorStyle: "laminate-raw-oak",
       wallColor: "#eef2f7",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: 0, width: 0.7 },
@@ -220,7 +220,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 3,
       depth: 3,
       height: 2.8,
-      floorStyle: "laminate-gray-ash",
+      floorStyle: "laminate-brushed-oak",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: 0.3, width: 0.8 },
         { id: uuidv4(), type: "window", wall: "left", position: 0, width: 1.2 },
@@ -238,7 +238,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 5,
       depth: 4.5,
       height: 2.8,
-      floorStyle: "laminate-walnut",
+      floorStyle: "laminate-brushed-oak",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: -0.4, width: 0.9 },
         { id: uuidv4(), type: "window", wall: "right", position: 0, width: 1.8 },
@@ -271,7 +271,7 @@ export const roomTemplates: RoomTemplate[] = [
       width: 3,
       depth: 5,
       height: 2.8,
-      floorStyle: "laminate-dark-brown",
+      floorStyle: "laminate-aged-oak",
       openings: [
         { id: uuidv4(), type: "door", wall: "front", position: 0, width: 1.0 },
         { id: uuidv4(), type: "door", wall: "back", position: 0, width: 0.9 },
