@@ -30,6 +30,7 @@ import { api } from "../../../lib/api";
 import { useStore } from "../../../lib/store";
 import { PlannerCatalogItem } from "../types";
 import type { CatalogItem } from "../../../lib/types";
+import { catalogItemMatchesCategoryFilter } from "../../../lib/catalogItemCategories";
 import {
   savedWardrobeToPlannerCatalogItem,
   wardrobeFootprintMeters,
@@ -502,7 +503,10 @@ export const usePlannerStore = create<PlannerState>()(
             item.rotationY, s.room
           );
 
-          const isKitchenItem = catalogItem.category === "Kitchen";
+          const isKitchenItem = catalogItemMatchesCategoryFilter(
+            catalogItem,
+            "kitchen",
+          );
           if (isKitchenItem) {
             const halfRoomW = s.room.width / 2;
             const halfRoomD = s.room.depth / 2;

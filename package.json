@@ -10,6 +10,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
+    "@google/model-viewer": "^4.2.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@types/three": "^0.182.0",

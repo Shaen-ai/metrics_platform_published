@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { loadPublicBootstrap } from "@/lib/loadPublicBootstrap";
 import { PublishedTenantProvider } from "@/contexts/PublishedTenantProvider";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,6 +32,7 @@ export default async function RootLayout({
   return (
     <html lang={initialLang} className={inter.variable} suppressHydrationWarning>
       <body className="antialiased" suppressHydrationWarning>
+        <GoogleAnalytics />
         <PublishedTenantProvider bootstrapAdmin={admin} initialLang={initialLang}>
           {children}
         </PublishedTenantProvider>

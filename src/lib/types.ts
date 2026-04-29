@@ -23,6 +23,8 @@ export interface CatalogItem {
   modelError?: string | null;
   description: string;
   category: string;
+  additionalCategories?: string[];
+  allCategories?: string[];
   price: number;
   currency: string;
   images: string[];

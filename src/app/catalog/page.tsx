@@ -7,6 +7,9 @@ import Image from "next/image";
 import { useStore } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
+import { getCatalog3dPresentation } from "@/lib/catalog3d";
+import CatalogModelViewer from "@/components/CatalogModelViewer";
+import { catalogItemAllCategoryLabels, catalogItemMatchesCategoryFilter } from "@/lib/catalogItemCategories";
 import { ArrowLeft, Home, Search, SlidersHorizontal, Package, X, ShoppingCart, Plus } from "lucide-react";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
@@ -58,6 +61,25 @@ function ItemMedia({ item, className }: { item: CatalogItem; className?: string 
       />
     );
   }
+
+  const td = getCatalog3dPresentation(item);
+  if (td === "viewer" && item.modelUrl) {
+    return (
+      <div className={`absolute inset-0 bg-[var(--muted)] ${className || ""}`}>
+        <CatalogModelViewer src={item.modelUrl} alt={item.name} />
+      </div>
+    );
+  }
+
+  if (td === "generating") {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[var(--muted-foreground)] px-2 text-center text-xs bg-[var(--muted)]">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--primary)] border-t-transparent" />
+        <span>3D generating…</span>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full flex items-center justify-center text-[var(--muted-foreground)]">
       <Package className="w-12 h-12 opacity-30" />
@@ -337,7 +359,7 @@ function FloatingCartButton() {
 }
 
 export default function CatalogPage() {
-  const { catalogItems, initializeStore } = useStore();
+  const { catalogItems, initializeStore, initialized } = useStore();
   const admin = useResolvedAdmin();
   const design = getSiteDesign(admin);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -359,26 +381,45 @@ export default function CatalogPage() {
   }, [layout]);
 
   const categories = useMemo(() => {
-    const cats = catalogItems.reduce<Record<string, number>>((acc, item) => {
-      acc[item.category] = (acc[item.category] || 0) + 1;
-      return acc;
-    }, {});
-    return [{ name: "all", count: catalogItems.length }, ...Object.entries(cats).map(([name, count]) => ({ name, count }))];
+    const displayAndCount = new Map<string, { label: string; count: number }>();
+    for (const item of catalogItems) {
+      for (const label of catalogItemAllCategoryLabels(item)) {
+        const slug = label.toLowerCase();
+        const cur = displayAndCount.get(slug);
+        if (!cur) {
+          displayAndCount.set(slug, { label, count: 1 });
+        } else {
+          displayAndCount.set(slug, { label: cur.label, count: cur.count + 1 });
+        }
+      }
+    }
+    const rows = [...displayAndCount.entries()]
+      .map(([slug, { label, count }]) => ({ slug, label, count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return [
+      { slug: "all" as const, label: "", count: catalogItems.length },
+      ...rows,
+    ];
   }, [catalogItems]);
 
   const filteredAndSortedItems = useMemo(() => {
     let items = catalogItems;
     if (selectedCategory !== "all") {
-      items = items.filter((item) => item.category === selectedCategory);
+      items = items.filter((item) =>
+        catalogItemMatchesCategoryFilter(item, selectedCategory)
+      );
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      items = items.filter(
-        (item) =>
+      items = items.filter((item) => {
+        const labelBlob = catalogItemAllCategoryLabels(item).join(" ").toLowerCase();
+        return (
           item.name.toLowerCase().includes(q) ||
           item.description.toLowerCase().includes(q) ||
-          item.category.toLowerCase().includes(q)
-      );
+          item.category.toLowerCase().includes(q) ||
+          labelBlob.includes(q)
+        );
+      });
     }
     switch (sortBy) {
       case "price-asc": items = [...items].sort((a, b) => a.price - b.price); break;
@@ -493,6 +534,14 @@ export default function CatalogPage() {
     }
   };
 
+  if (!initialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-[var(--primary)] border-t-transparent" />
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${design.shellClass}`} style={getDesignVariables(admin)}>
       <header className={`sticky top-0 z-50 ${design.headerClass}`}>
@@ -570,17 +619,17 @@ export default function CatalogPage() {
         <div className="mb-8 flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
           {categories.map((cat) => (
             <button
-              key={cat.name}
-              onClick={() => setSelectedCategory(cat.name)}
+              key={cat.slug}
+              onClick={() => setSelectedCategory(cat.slug)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                selectedCategory === cat.name
+                selectedCategory === cat.slug
                   ? "bg-[var(--primary)] text-white shadow-md shadow-[var(--primary)]/25"
                   : "bg-white hover:bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)]"
               }`}
             >
-              {cat.name === "all" ? "All Items" : cat.name}
+              {cat.slug === "all" ? "All Items" : cat.label}
               <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                selectedCategory === cat.name
+                selectedCategory === cat.slug
                   ? "bg-white/25 text-white"
                   : "bg-[var(--muted)] text-[var(--muted-foreground)]"
               }`}>

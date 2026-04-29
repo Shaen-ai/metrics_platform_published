@@ -27,3 +27,23 @@ export function formatPrice(price: number, currency: string = "USD"): string {
 
   return `${symbol}${formatted}`;
 }
+
+/**
+ * Strip the backend origin from storage URLs so they load via Next rewrites (/storage, /files).
+ * Avoids CORS/CORP issues for the model-viewer web component and related fetches.
+ */
+export function toRelativeStorageUrl(url: string | undefined): string {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("/")) return trimmed;
+  try {
+    const u = new URL(trimmed);
+    if (u.pathname.startsWith("/storage/") || u.pathname.startsWith("/files/")) {
+      return u.pathname + u.search + u.hash;
+    }
+  } catch {
+    /* not absolute */
+  }
+  return trimmed;
+}

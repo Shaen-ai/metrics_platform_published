@@ -8,19 +8,42 @@ import { useStore } from "@/lib/store";
 import { Button, Card, CardContent } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
 import { ArrowLeft, Home } from "lucide-react";
+import CatalogModelViewer from "@/components/CatalogModelViewer";
+import { useTranslation } from "@/hooks/useTranslation";
+import { getCatalog3dPresentation } from "@/lib/catalog3d";
 
 export default function CatalogDetailPage() {
   const params = useParams();
   const itemId = params.id as string;
-
-  const { catalogItems, initializeStore } = useStore();
+  const { t } = useTranslation();
+  const [view, setView] = useState<"photos" | "3d">("photos");
   const [selectedImage, setSelectedImage] = useState(0);
+
+  const { catalogItems, initializeStore, initialized } = useStore();
 
   useEffect(() => {
     initializeStore();
   }, [initializeStore]);
 
   const item = catalogItems.find((i) => i.id === itemId);
+
+  const td = item ? getCatalog3dPresentation(item) : "none";
+  const canShow3d = td === "viewer";
+  const generating3d = td === "generating";
+  const show3dTab = td !== "none";
+
+  useEffect(() => {
+    setSelectedImage(0);
+    setView("photos");
+  }, [itemId]);
+
+  if (!initialized) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-[var(--primary)] border-t-transparent" />
+      </div>
+    );
+  }
 
   if (!item) {
     return (
@@ -61,11 +84,53 @@ export default function CatalogDetailPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          {/* Image Gallery */}
+          {/* Media: photos + optional 3D */}
           <div>
+            {show3dTab && (
+              <div className="flex gap-2 mb-4 p-1 rounded-xl bg-[var(--muted)] w-fit">
+                <button
+                  type="button"
+                  onClick={() => setView("photos")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    view === "photos"
+                      ? "bg-[var(--background)] shadow text-[var(--foreground)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  Photos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("3d")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    view === "3d"
+                      ? "bg-[var(--background)] shadow text-[var(--foreground)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  3D model
+                </button>
+              </div>
+            )}
+
             <Card className="overflow-hidden mb-4">
               <div className="aspect-square relative bg-[var(--muted)]">
-                {item.images[selectedImage] ? (
+                {view === "3d" && canShow3d && item.modelUrl ? (
+                  <CatalogModelViewer
+                    src={item.modelUrl}
+                    alt={item.name}
+                    fallbackImage={item.images[0]}
+                  />
+                ) : view === "3d" && generating3d ? (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[320px] px-6 text-center">
+                    <div className="animate-spin rounded-full h-10 w-10 border-2 border-[var(--primary)] border-t-transparent mb-4" />
+                    <p className="text-[var(--muted-foreground)]">{t("catalog.loading3d")}</p>
+                  </div>
+                ) : view === "3d" && td === "failed" ? (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[320px] px-6 text-center text-[var(--muted-foreground)]">
+                    <p>3D model could not be generated.</p>
+                  </div>
+                ) : item.images[selectedImage] ? (
                   <Image
                     src={item.images[selectedImage]}
                     alt={item.name}
@@ -80,7 +145,7 @@ export default function CatalogDetailPage() {
               </div>
             </Card>
 
-            {item.images.length > 1 && (
+            {view === "photos" && item.images.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {item.images.map((img, index) => (
                   <button

@@ -217,6 +217,8 @@ export interface PlannerCatalogItem {
   id: string;
   name: string;
   category: string;
+  additionalCategories?: string[];
+  allCategories?: string[];
   subCategory?: string;
   vendor: string;
   price: number;

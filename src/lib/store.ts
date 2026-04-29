@@ -136,6 +136,8 @@ export const useStore = create<StoreState>()(
           } else {
             console.error("Failed to initialize store from API:", e);
           }
+          /** Unblocks catalog routes that wait on `initialized` (detail page, 3D strip). */
+          set({ initialized: true });
         }
       },
 

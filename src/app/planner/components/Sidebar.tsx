@@ -49,6 +49,7 @@ import type { FloorStyle } from "../types";
 import { LAMINATE_OPTIONS } from "../types";
 import FloorSwatch from "./FloorSwatch";
 import { wardrobeFootprintMeters, isYourWardrobesCategory } from "../wardrobe/plannerWardrobeCatalog";
+import { catalogItemAllCategoryLabels } from "@/lib/catalogItemCategories";
 
 const categoryIcons: Record<string, React.ReactNode> = {
   Seating: <Armchair size={14} />,
@@ -134,12 +135,15 @@ export default function Sidebar() {
         : catalog;
     if (!searchQuery.trim()) return items;
     const q = searchQuery.toLowerCase();
-    return items.filter(
-      (item) =>
+    return items.filter((item) => {
+      const labelBlob = catalogItemAllCategoryLabels(item).join(" ").toLowerCase();
+      return (
         item.name.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q) ||
+        labelBlob.includes(q) ||
         (item.vendor && item.vendor.toLowerCase().includes(q))
-    );
+      );
+    });
   }, [catalog, searchQuery, plannerConfig?.id]);
 
   const useSubCategories = plannerConfig?.id === "kitchen";
