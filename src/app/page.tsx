@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { BrandLogoImage } from "@/components/BrandLogoImage";
 import { contactSupportEmail } from "@/lib/publicEnv";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
@@ -48,9 +48,9 @@ export default function HomePage() {
       <header className={`sticky top-0 z-50 ${design.headerClass}`}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Image
-              src="/logo.png"
-              alt={`${brandName} logo`}
+            <BrandLogoImage
+              admin={admin}
+              brandName={brandName}
               width={40}
               height={40}
               priority
@@ -323,9 +323,13 @@ export default function HomePage() {
           <div className="grid md:grid-cols-4 gap-10 mb-12">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 rounded-xl bg-[var(--site-primary)] flex items-center justify-center text-white font-bold text-sm">
-                  {brandName.charAt(0)}
-                </div>
+                <BrandLogoImage
+                  admin={admin}
+                  brandName={brandName}
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 rounded-xl object-contain"
+                />
                 <span className="text-lg font-semibold">{brandName}</span>
               </div>
               <p className="text-sm text-gray-400 leading-relaxed">

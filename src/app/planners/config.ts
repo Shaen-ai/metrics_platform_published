@@ -13,6 +13,8 @@ export interface PlannerConfig {
   tags: string[];
   /** When true, this planner uses a dedicated layout instead of the room planner */
   customLayout?: boolean;
+  /** When false, omitted from /planners hub; direct URLs still work. Default true. */
+  hubVisible?: boolean;
 }
 
 export const plannerConfigs: PlannerConfig[] = [
@@ -152,6 +154,8 @@ export const plannerConfigs: PlannerConfig[] = [
     defaultRoom: { width: 3, depth: 3, height: 2.8 },
     tags: ["wardrobe", "garderobe", "closet", "PAX", "shelves", "drawers"],
     customLayout: true,
+    /** Reach via Bedroom planner (“Your wardrobes”) or deep links; not a separate hub tile */
+    hubVisible: false,
   },
   {
     id: "living-room",

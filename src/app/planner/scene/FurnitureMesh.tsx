@@ -62,27 +62,19 @@ const BoxFallback = memo(function BoxFallback({ item, catalogItem, isSelected, i
           transparent={isSelected}
           opacity={isSelected ? 0.85 : 1}
         />
-        {(isSelected || isLocked) && (
+        {isLocked && (
           <>
-            <Edges scale={1.02} threshold={15} color={isLocked ? "#F44336" : "#FFC107"} lineWidth={4} />
-            <Edges scale={1.015} threshold={15} color={isLocked ? "#E57373" : "#FFD700"} lineWidth={2} />
+            <Edges scale={1.02} threshold={15} color="#F44336" lineWidth={4} />
+            <Edges scale={1.015} threshold={15} color="#E57373" lineWidth={2} />
           </>
         )}
       </mesh>
-
-      {/* Direction indicator (front arrow) */}
-      {isSelected && (
-        <mesh position={[0, -height / 2 + 0.003, -depth / 2 - 0.05]}>
-          <coneGeometry args={[0.06, 0.12, 3]} />
-          <meshBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
-        </mesh>
-      )}
     </group>
   );
 });
 
 const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProps) {
-  const { item, catalogItem, isSelected, isLocked } = props;
+  const { item, catalogItem, isLocked } = props;
   const [model, setModel] = useState<{ url?: string; scene: THREE.Group | null; failed: boolean }>({
     url: catalogItem.modelUrl,
     scene: null,
@@ -161,19 +153,13 @@ const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProp
         ]}
         scale={fit.scale}
       />
-      {(isSelected || isLocked) && (
+      {isLocked && (
         <group position={[0, height / 2, 0]}>
           <lineSegments>
             <edgesGeometry args={[new THREE.BoxGeometry(width, height, depth)]} />
-            <lineBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
+            <lineBasicMaterial color="#F44336" />
           </lineSegments>
         </group>
-      )}
-      {isSelected && (
-        <mesh position={[0, 0.003, -depth / 2 - 0.08]}>
-          <coneGeometry args={[0.06, 0.12, 3]} />
-          <meshBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
-        </mesh>
       )}
     </group>
   );
@@ -181,12 +167,8 @@ const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProp
 
 // ── User-designed wardrobe (procedural) ─────────────────────────────────
 
-const PlacedWardrobeMesh = memo(function PlacedWardrobeMesh({
-  item,
-  catalogItem,
-  isSelected,
-  isLocked,
-}: FurnitureMeshProps) {
+const PlacedWardrobeMesh = memo(function PlacedWardrobeMesh(props: FurnitureMeshProps) {
+  const { item, catalogItem, isLocked } = props;
   const groupRef = useRef<THREE.Group>(null);
   const rawMaterials = useStore((s) => s.materials);
   const admin = useResolvedAdmin();
@@ -225,7 +207,7 @@ const PlacedWardrobeMesh = memo(function PlacedWardrobeMesh({
   const height = item.height ?? catalogItem.height;
 
   if (!embed) {
-    return <BoxFallback item={item} catalogItem={catalogItem} isSelected={isSelected} isLocked={isLocked} />;
+    return <BoxFallback {...props} />;
   }
 
   return (
@@ -235,19 +217,13 @@ const PlacedWardrobeMesh = memo(function PlacedWardrobeMesh({
       rotation={[0, item.rotationY, 0]}
     >
       <WardrobeModulesInRoom value={embed} />
-      {(isSelected || isLocked) && (
+      {isLocked && (
         <group position={[0, height / 2, 0]}>
           <lineSegments>
             <edgesGeometry args={[new THREE.BoxGeometry(width, height, depth)]} />
-            <lineBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
+            <lineBasicMaterial color="#F44336" />
           </lineSegments>
         </group>
-      )}
-      {isSelected && (
-        <mesh position={[0, 0.003, -depth / 2 - 0.08]}>
-          <coneGeometry args={[0.06, 0.12, 3]} />
-          <meshBasicMaterial color={isLocked ? "#F44336" : "#FFC107"} />
-        </mesh>
       )}
     </group>
   );

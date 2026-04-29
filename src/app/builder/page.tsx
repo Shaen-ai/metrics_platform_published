@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useStore } from "@/lib/store";
+import { BrandLogoImage } from "@/components/BrandLogoImage";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
@@ -22,6 +23,7 @@ export default function BuilderPage() {
   } = useStore();
   const admin = useResolvedAdmin();
   const design = getSiteDesign(admin);
+  const brandName = admin?.companyName || "Tunzone";
 
   useEffect(() => {
     initializeStore();
@@ -39,7 +41,13 @@ export default function BuilderPage() {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center text-white font-bold text-xs">T</div>
+              <BrandLogoImage
+                admin={admin}
+                brandName={brandName}
+                width={32}
+                height={32}
+                className="w-8 h-8 rounded-lg object-contain"
+              />
               <span className="text-lg font-semibold">Module Builder</span>
             </div>
           </div>

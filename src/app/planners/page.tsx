@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { BrandLogoImage } from "@/components/BrandLogoImage";
 import {
   LayoutDashboard,
   CookingPot,
@@ -59,10 +59,11 @@ export default function PlannersHubPage() {
   }, [initializeStore]);
 
   const visiblePlanners = useMemo(() => {
+    const hubListed = plannerConfigs.filter((p) => p.hubVisible !== false);
     const allowed = admin?.selectedPlannerTypes;
-    if (!allowed || allowed.length === 0) return plannerConfigs;
+    if (!allowed || allowed.length === 0) return hubListed;
     const allowedSet = new Set(allowed);
-    return plannerConfigs.filter((planner) => allowedSet.has(planner.id));
+    return hubListed.filter((planner) => allowedSet.has(planner.id));
   }, [admin?.selectedPlannerTypes]);
   const plannersTitle = admin?.publicSiteTexts?.plannersTitle?.trim() || t("planners.heroTitle");
   const plannersSubtitle = admin?.publicSiteTexts?.plannersSubtitle?.trim() || t("planners.heroSubtitle");
@@ -77,9 +78,9 @@ export default function PlannersHubPage() {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <Image
-                src="/logo.png"
-                alt={`${brandName} logo`}
+              <BrandLogoImage
+                admin={admin}
+                brandName={brandName}
                 width={32}
                 height={32}
                 className="w-8 h-8 rounded-lg object-contain"

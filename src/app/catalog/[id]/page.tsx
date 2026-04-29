@@ -34,8 +34,14 @@ export default function CatalogDetailPage() {
 
   useEffect(() => {
     setSelectedImage(0);
-    setView("photos");
-  }, [itemId]);
+    if (!item) {
+      setView("photos");
+      return;
+    }
+    const presentation = getCatalog3dPresentation(item);
+    const preferThreeD = presentation === "viewer" || presentation === "generating";
+    setView(preferThreeD ? "3d" : "photos");
+  }, [itemId, item?.id, item?.modelUrl, item?.modelStatus]);
 
   if (!initialized) {
     return (

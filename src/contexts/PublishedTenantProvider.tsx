@@ -20,6 +20,15 @@ export const PublishedLanguageContext =
 export function useResolvedAdmin(): Admin | null {
   const bootstrap = useContext(TenantBootstrapContext);
   const storeAdmin = useStore((s) => s.admin);
+  const initialized = useStore((s) => s.initialized);
+
+  // Until the first `/public/{slug}` sync finishes, prefer SSR bootstrap. Otherwise
+  // persist rehydration can briefly surface a stale `admin` from disk and override
+  // the correct tenant (Tunzone fallback → real logo flash).
+  if (!initialized) {
+    return bootstrap ?? storeAdmin;
+  }
+
   return storeAdmin ?? bootstrap;
 }
 

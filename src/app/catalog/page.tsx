@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { BrandLogoImage } from "@/components/BrandLogoImage";
 import { useStore } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
@@ -437,6 +438,7 @@ export default function CatalogPage() {
 
   const hasActiveFilters = selectedCategory !== "all" || searchQuery.trim() !== "" || sortBy !== "featured";
   const catalogTitle = admin?.publicSiteTexts?.catalogTitle?.trim() || "Our Collection";
+  const brandName = admin?.companyName || "Tunzone";
   const catalogSubtitle =
     admin?.publicSiteTexts?.catalogSubtitle?.trim() ||
     `${catalogItems.length} ${catalogItems.length === 1 ? "piece" : "pieces"} of handcrafted furniture`;
@@ -551,9 +553,13 @@ export default function CatalogPage() {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center text-white font-bold text-xs">
-                {admin?.companyName?.[0] || "T"}
-              </div>
+              <BrandLogoImage
+                admin={admin}
+                brandName={brandName}
+                width={32}
+                height={32}
+                className="w-8 h-8 rounded-lg object-contain"
+              />
               <span className="text-lg font-semibold">{catalogTitle}</span>
             </div>
           </div>

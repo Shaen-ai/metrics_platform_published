@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { loadPublicBootstrap } from "@/lib/loadPublicBootstrap";
+import { getStorefrontLogoSrc } from "@/lib/brandLogo";
 import { PublishedTenantProvider } from "@/contexts/PublishedTenantProvider";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 
@@ -11,16 +12,23 @@ const inter = Inter({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "Tunzone - Design Furniture, Build Dreams",
-  description:
-    "The all-in-one platform for furniture manufacturers. Create planners, publish your catalog, and let customers design their perfect rooms.",
-  icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/logo.png",
-  },
-};
+const DEFAULT_TITLE = "Tunzone - Design Furniture, Build Dreams";
+const DEFAULT_DESCRIPTION =
+  "The all-in-one platform for furniture manufacturers. Create planners, publish your catalog, and let customers design their perfect rooms.";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { admin } = await loadPublicBootstrap();
+  const hasCustomLogo = Boolean(admin?.logo?.trim());
+  const brandIcon = hasCustomLogo ? getStorefrontLogoSrc(admin) : null;
+
+  return {
+    title: admin?.companyName?.trim() ? admin.companyName.trim() : DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    icons: brandIcon
+      ? { icon: brandIcon, shortcut: brandIcon, apple: brandIcon }
+      : { icon: "/favicon.png", shortcut: "/favicon.png", apple: "/logo.png" },
+  };
+}
 
 export default async function RootLayout({
   children,

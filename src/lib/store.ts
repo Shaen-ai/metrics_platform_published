@@ -300,6 +300,25 @@ export const useStore = create<StoreState>()(
     {
       name: "metrics-published-storage",
       version: 6,
+      merge: (persistedState, currentState) => {
+        const p =
+          persistedState && typeof persistedState === "object"
+            ? (persistedState as Partial<StoreState>)
+            : {};
+        return {
+          ...currentState,
+          canvasObjects: p.canvasObjects ?? currentState.canvasObjects,
+          builderModules: p.builderModules ?? currentState.builderModules,
+          plannerCustomModules: p.plannerCustomModules ?? currentState.plannerCustomModules,
+          plannerSavedWardrobes: p.plannerSavedWardrobes ?? currentState.plannerSavedWardrobes,
+          cart: p.cart ?? currentState.cart,
+          admin: currentState.admin,
+          catalogItems: currentState.catalogItems,
+          modules: currentState.modules,
+          materials: currentState.materials,
+          initialized: currentState.initialized,
+        };
+      },
       migrate: (persistedState: unknown, version: number) => {
         let p = persistedState as Record<string, unknown> & { cart?: unknown[] };
         if (version < 2) {
