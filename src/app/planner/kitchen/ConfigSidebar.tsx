@@ -34,8 +34,7 @@ import {
   DESIGN_REF_PRESETS,
   getEffectiveBaseDims,
   getEffectiveWallDims,
-  getBaseModuleLimits,
-  getWallModuleLimits,
+  limitsForKitchenModuleEdit,
   getCountertopPricePerLinearMeter,
   resolveCountertopKitchenMaterial,
 } from "./data";
@@ -233,9 +232,19 @@ const CATEGORIES: { id: SidebarPanel; label: string; icon: React.ReactNode }[] =
   { id: "room",          label: "Room",        icon: <Home size={20} /> },
 ];
 
+/** Module IDs linked in admin "compatible modules" are UUIDs — still show in Kitchen Designer. */
+const MODULE_ID_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Kitchen Designer lists admin modules unless compatibility is used as a non-module tag
+ * without "kitchen" (legacy). Empty compatibility = show all.
+ */
 function isKitchenCatalogModule(m: Module): boolean {
   if (!m.compatibleWith?.length) return true;
-  return m.compatibleWith.some((c) => c.toLowerCase().includes("kitchen"));
+  if (m.compatibleWith.some((c) => c.toLowerCase().includes("kitchen"))) return true;
+  if (m.compatibleWith.every((c) => MODULE_ID_UUID.test(c))) return true;
+  return false;
 }
 
 function useFindCatalogModuleById() {
@@ -438,6 +447,14 @@ function DesignKitchenHomePanel({
       ? availableDoorMaterials
       : [NEUTRAL_KITCHEN_MATERIAL];
 
+  const addCatalogModuleAndEdit = useCallback(
+    (m: Module) => {
+      addModuleFromAdminCatalog(m);
+      setPanel("layout");
+    },
+    [addModuleFromAdminCatalog, setPanel],
+  );
+
   return (
     <div className="sidebar-inner">
       <div className="sidebar-panel-scroll sidebar-home-scroll">
@@ -555,8 +572,10 @@ function DesignKitchenHomePanel({
           yourModules.length === 0 && (
           <div className="sidebar-home-catalog sidebar-home-catalog--hintonly">
             <p className="cfg-hint layout-hint">
-              Admin modules need <strong>kitchen</strong> in compatibility (or leave compatibility empty) to
-              appear here.
+              No modules match the Kitchen Designer list. Use the <strong>Kitchen Designer</strong> planner
+              (not the room &ldquo;Kitchen&rdquo; planner), finish the room-shape step, then check modules are
+              <strong> active</strong> in admin. Linked &ldquo;compatible&rdquo; modules (UUIDs) still appear
+              here; only custom text tags without &ldquo;kitchen&rdquo; are hidden.
             </p>
           </div>
         )}
@@ -577,7 +596,7 @@ function DesignKitchenHomePanel({
                     <KitchenCatalogDraggableTile
                       key={m.id}
                       m={m}
-                      onAdd={() => addModuleFromAdminCatalog(m)}
+                      onAdd={() => addCatalogModuleAndEdit(m)}
                     />
                   ))}
                 </div>
@@ -591,7 +610,7 @@ function DesignKitchenHomePanel({
                     <KitchenCatalogDraggableTile
                       key={m.id}
                       m={m}
-                      onAdd={() => addModuleFromAdminCatalog(m)}
+                      onAdd={() => addCatalogModuleAndEdit(m)}
                     />
                   ))}
                 </div>
@@ -864,7 +883,7 @@ function LayoutPanel() {
           const def = BASE_MODULE_CATALOG.find((d) => d.type === m.type);
           const isSelected = ui.selectedBaseModuleId === m.id;
           const dims = getEffectiveBaseDims(m);
-          const lim = getBaseModuleLimits(m.type as BaseModuleType);
+          const lim = limitsForKitchenModuleEdit(m);
           return (
             <KitchenDraggableModuleBlock
               key={m.id}
@@ -989,7 +1008,7 @@ function LayoutPanel() {
               const def = WALL_MODULE_CATALOG.find((d) => d.type === m.type);
               const isSelected = ui.selectedWallModuleId === m.id;
               const wdims = getEffectiveWallDims(m);
-              const wlim = getWallModuleLimits(m.type as WallModuleType);
+              const wlim = limitsForKitchenModuleEdit(m);
               return (
                 <KitchenDraggableModuleBlock
                   key={m.id}
@@ -1178,7 +1197,7 @@ function IslandPanel() {
               const def = BASE_MODULE_CATALOG.find((d) => d.type === m.type);
               const isSelected = ui.selectedIslandBaseModuleId === m.id;
               const dims = getEffectiveBaseDims(m);
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return (
                 <KitchenDraggableModuleBlock
                   key={m.id}
@@ -1293,7 +1312,7 @@ function IslandPanel() {
                   const def = WALL_MODULE_CATALOG.find((d) => d.type === m.type);
                   const isSelected = ui.selectedIslandWallModuleId === m.id;
                   const wdims = getEffectiveWallDims(m);
-                  const wlim = getWallModuleLimits(m.type as WallModuleType);
+                  const wlim = limitsForKitchenModuleEdit(m);
                   return (
                     <KitchenDraggableModuleBlock
                       key={m.id}
@@ -1548,7 +1567,7 @@ function LeftWallPanel() {
                   const def = BASE_MODULE_CATALOG.find((d) => d.type === m.type);
                   const isSelected = ui.selectedLeftBaseModuleId === m.id;
                   const dims = getEffectiveBaseDims(m);
-                  const lim = getBaseModuleLimits(m.type as BaseModuleType);
+                  const lim = limitsForKitchenModuleEdit(m);
                   return (
                     <KitchenDraggableModuleBlock
                       key={m.id}
@@ -1663,7 +1682,7 @@ function LeftWallPanel() {
                       const def = WALL_MODULE_CATALOG.find((d) => d.type === m.type);
                       const isSelected = ui.selectedLeftWallModuleId === m.id;
                       const wdims = getEffectiveWallDims(m);
-                      const wlim = getWallModuleLimits(m.type as WallModuleType);
+                      const wlim = limitsForKitchenModuleEdit(m);
                       return (
                         <KitchenDraggableModuleBlock
                           key={m.id}

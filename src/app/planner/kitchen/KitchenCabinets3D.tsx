@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import { useMemo, useCallback, useRef, useLayoutEffect, useState, useEffect } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { useKitchenStore } from "./store";
@@ -16,13 +16,10 @@ import {
   type KitchenMaterial,
 } from "./data";
 import { useHandleTexture } from "../useHandleTexture";
-import { cloneBoxMaterialsWithWoodRepeat, setWoodMapRepeatForPanel, cloneMaterialFromPlacement } from "../textureRepeat";
-import { useKitchenPanelPlacements, type KitchenPanelRenderInfo } from "../sheet/useKitchenPanelPlacements";
+import { cloneBoxMaterialsWithWoodRepeat, setWoodMapRepeatForPanel } from "../textureRepeat";
 import type { GrainDirection } from "./types";
 import type {
   KitchenModule,
-  BaseModuleType,
-  WallModuleType,
   CornerUnitConfig,
   DesignPlacement,
   DesignRefKind,
@@ -31,6 +28,9 @@ import type {
   FloorAlignGuide,
 } from "./types";
 import { useKitchenMaterial, useKitchenDoorMaterial } from "./useKitchenMaterial";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { useStore } from "@/lib/store";
+import { publicApiUrl } from "@/lib/publicEnv";
 
 const CM = 0.01; // 1 cm = 0.01 m in Three.js units
 const PT = PANEL_THICKNESS * CM;
@@ -57,37 +57,213 @@ function kitchenDoorPanelMaterial(
   refW_m: number,
   refH_m: number,
   grain: GrainDirection,
-  /** When set, sample the material's sheet instead of refW/refH tiling. */
-  placementInfo?: KitchenPanelRenderInfo | null,
 ): THREE.Material {
   if (!(base instanceof THREE.MeshPhysicalMaterial) || !base.map) return base;
-  if (placementInfo) {
-    return cloneMaterialFromPlacement(
-      base,
-      placementInfo.placement,
-      placementInfo.sheet,
-      placementInfo.textureRotated,
-    );
-  }
   const mat = base.clone() as THREE.MeshPhysicalMaterial;
   mat.map = base.map.clone();
   setWoodMapRepeatForPanel(mat.map, panelW, panelH, refW_m, refH_m, grain);
   return mat;
 }
 
-/**
- * Maps the `KitchenCabinetDragRun` discriminator to the panel-id prefix
- * used by `enumerateKitchenPanels`. Keeps the two in sync without the
- * caller plumbing an additional string prop.
- */
-const DRAG_RUN_TO_PANEL_PREFIX: Record<string, string> = {
-  "main-base": "main.base",
-  "main-wall": "main.wall",
-  "island-base": "island.base",
-  "island-wall": "island.wall",
-  "left-base": "left.base",
-  "left-wall": "left.wall",
-};
+const GLB_MATERIAL_OVERRIDE_SKIP_RE =
+  /glass|mirror|chrome|handle|knob|hardware|hinge|rail|runner|wheel|sink|faucet|tap|metal/i;
+const GLB_DOOR_PART_RE = /door|drawer|front|facade|face|fasad|panel/i;
+const GLB_CARCASS_PART_RE = /carcass|carcase|frame|body|cabinet|case|side|shelf|shelves|bottom|top|back/i;
+
+function meshShouldReceiveKitchenGlbOverride(mesh: THREE.Mesh): boolean {
+  const n = mesh.name?.toLowerCase() ?? "";
+  if (GLB_MATERIAL_OVERRIDE_SKIP_RE.test(n)) return false;
+
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const mat of mats) {
+    if (!(mat instanceof THREE.MeshStandardMaterial) && !(mat instanceof THREE.MeshPhysicalMaterial)) {
+      return false;
+    }
+    if (mat.transparent && mat.opacity < 0.95) return false;
+    if (mat instanceof THREE.MeshPhysicalMaterial && (mat.transmission ?? 0) > 0.5) return false;
+  }
+  return true;
+}
+
+function meshNameMaterialKind(mesh: THREE.Mesh): "door" | "carcass" | null {
+  const n = mesh.name?.toLowerCase() ?? "";
+  if (GLB_DOOR_PART_RE.test(n)) return "door";
+  if (GLB_CARCASS_PART_RE.test(n)) return "carcass";
+  return null;
+}
+
+function splitKitchenCatalogMeshMaterialsByFrontFaces(
+  mesh: THREE.Mesh,
+  sceneBox: THREE.Box3,
+  carcassMaterial: THREE.Material,
+  doorMaterial: THREE.Material,
+): boolean {
+  const sourceGeometry = mesh.geometry;
+  const position = sourceGeometry.getAttribute("position");
+  if (!(position instanceof THREE.BufferAttribute) || position.itemSize < 3) return false;
+
+  const index = sourceGeometry.index;
+  const triangleCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+  if (triangleCount <= 0) return false;
+
+  const sceneDepth = Math.max(sceneBox.max.z - sceneBox.min.z, 0.001);
+  const frontZ = sceneBox.max.z - sceneDepth * 0.22;
+  const center = new THREE.Vector3();
+  const v = new THREE.Vector3();
+
+  const geometry = sourceGeometry.clone();
+  geometry.clearGroups();
+
+  let frontCount = 0;
+  let carcassCount = 0;
+
+  for (let tri = 0; tri < triangleCount; tri += 1) {
+    center.set(0, 0, 0);
+    for (let corner = 0; corner < 3; corner += 1) {
+      const attrIndex = index ? index.getX(tri * 3 + corner) : tri * 3 + corner;
+      v.fromBufferAttribute(position, attrIndex).applyMatrix4(mesh.matrixWorld);
+      center.add(v);
+    }
+    center.multiplyScalar(1 / 3);
+
+    const isFrontFace = center.z >= frontZ;
+    if (isFrontFace) {
+      frontCount += 1;
+    } else {
+      carcassCount += 1;
+    }
+    geometry.addGroup(tri * 3, 3, isFrontFace ? 1 : 0);
+  }
+
+  if (frontCount === 0 || carcassCount === 0) {
+    geometry.dispose();
+    return false;
+  }
+
+  mesh.geometry = geometry;
+  mesh.material = [carcassMaterial, doorMaterial];
+  return true;
+}
+
+function applyKitchenCatalogGlbMaterials(
+  scene: THREE.Group,
+  carcassMaterial: THREE.Material,
+  doorMaterial: THREE.Material,
+) {
+  scene.updateMatrixWorld(true);
+  const sceneBox = new THREE.Box3().setFromObject(scene);
+
+  scene.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) return;
+    const mesh = child as THREE.Mesh;
+    if (!meshShouldReceiveKitchenGlbOverride(mesh)) return;
+
+    const namedKind = meshNameMaterialKind(mesh);
+    if (namedKind === "door") {
+      mesh.material = doorMaterial;
+      return;
+    }
+    if (namedKind === "carcass") {
+      mesh.material = carcassMaterial;
+      return;
+    }
+
+    if (!splitKitchenCatalogMeshMaterialsByFrontFaces(mesh, sceneBox, carcassMaterial, doorMaterial)) {
+      mesh.material = carcassMaterial;
+    }
+  });
+}
+
+/** Resolve storage URLs the same way as room planner catalog GLBs (see FurnitureMesh). */
+function plannerModelUrl(url: string): string {
+  if (typeof window === "undefined") return url;
+  try {
+    const apiOrigin = new URL(publicApiUrl).origin;
+    const parsed = new URL(url, window.location.origin);
+    if (
+      parsed.origin === apiOrigin &&
+      (parsed.pathname.startsWith("/storage/") || parsed.pathname.startsWith("/files/"))
+    ) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return parsed.href;
+  } catch {
+    return url;
+  }
+}
+
+function useResolvedKitchenCatalogGlbUrl(module: KitchenModule): string | null {
+  const modules = useStore((s) => s.modules);
+  return useMemo(() => {
+    const snap = module.adminCatalogModelUrl;
+    const id = module.adminCatalogModuleId;
+    if (!id && !snap) return null;
+    const live = id ? modules.find((m) => m.id === id) : undefined;
+    const url = live?.modelUrl ?? snap ?? null;
+    if (!url) return null;
+    const status = live?.modelStatus;
+    if (status != null && status !== "done") return null;
+    return url;
+  }, [module.adminCatalogModuleId, module.adminCatalogModelUrl, modules]);
+}
+
+function useKitchenCatalogGltfScene(
+  url: string | null,
+  boxW: number,
+  boxH: number,
+  boxD: number,
+): {
+  loaded: THREE.Group | null;
+  fit: { center: THREE.Vector3; scale: [number, number, number] } | null;
+  failed: boolean;
+} {
+  const [loaded, setLoaded] = useState<THREE.Group | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!url) {
+      return;
+    }
+    let cancelled = false;
+    const loader = new GLTFLoader();
+    loader.load(
+      plannerModelUrl(url),
+      (gltf) => {
+        if (cancelled) return;
+        setLoaded(gltf.scene.clone(true));
+        setFailed(false);
+      },
+      undefined,
+      () => {
+        if (!cancelled) {
+          setLoaded(null);
+          setFailed(true);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const fit = useMemo(() => {
+    if (!loaded) return null;
+    const box = new THREE.Box3().setFromObject(loaded);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const sx = size.x > 0 ? boxW / size.x : 1;
+    const sy = size.y > 0 ? boxH / size.y : 1;
+    const sz = size.z > 0 ? boxD / size.z : 1;
+    const scale: [number, number, number] = [
+      Number.isFinite(sx) && sx > 0 ? sx : 1,
+      Number.isFinite(sy) && sy > 0 ? sy : 1,
+      Number.isFinite(sz) && sz > 0 ? sz : 1,
+    ];
+    return { center, scale };
+  }, [loaded, boxW, boxH, boxD]);
+
+  return { loaded, fit, failed };
+}
 
 /** R3F does not reliably apply `userData` from JSX on `<group>` — set on the THREE.Group for native raycasts (KitchenCabinetDragController). */
 function useKitchenDragGroupUserData(
@@ -312,16 +488,13 @@ function BaseModule({
   const frontZ = D / 2 + 0.003;
   const centerZ = D / 2;
 
+  const catalogGlbUrl = useResolvedKitchenCatalogGlbUrl(module);
+  const gltfState = useKitchenCatalogGltfScene(catalogGlbUrl, W, cabinetH, D);
+
   const cabinetMeshMaterial = useMemo(
     () => kitchenCabinetBoxMaterials(baseCabinetMat, W, cabinetH, D, refW_m, refH_m, cabinetGrain),
     [baseCabinetMat, W, cabinetH, D, refW_m, refH_m, cabinetGrain],
   );
-
-  const placements = useKitchenPanelPlacements();
-  const panelIdPrefix = DRAG_RUN_TO_PANEL_PREFIX[dragMeta.run];
-  const doorPlacement = panelIdPrefix
-    ? placements.get(`${panelIdPrefix}.${module.id}.door`)
-    : null;
 
   const doorPanelMaterial = useMemo(
     () =>
@@ -332,9 +505,8 @@ function BaseModule({
         refW_m,
         refH_m,
         doorGrain,
-        doorPlacement,
       ),
-    [baseDoorMat, frontW, frontH, refW_m, refH_m, doorGrain, doorPlacement],
+    [baseDoorMat, frontW, frontH, refW_m, refH_m, doorGrain],
   );
 
   const drawerFrontMat = useMemo(() => {
@@ -349,9 +521,20 @@ function BaseModule({
       refW_m,
       refH_m,
       doorGrain,
-      doorPlacement,
     );
-  }, [module.type, baseDoorMat, frontW, frontH, refW_m, refH_m, doorGrain, doorPanelMaterial, doorPlacement]);
+  }, [module.type, baseDoorMat, frontW, frontH, refW_m, refH_m, doorGrain, doorPanelMaterial]);
+
+  const catalogCabinetMaterial = useMemo(
+    () => kitchenDoorPanelMaterial(baseCabinetMat, W, cabinetH, refW_m, refH_m, cabinetGrain),
+    [baseCabinetMat, W, cabinetH, refW_m, refH_m, cabinetGrain],
+  );
+
+  const catalogMeshScene = useMemo(() => {
+    if (!gltfState.loaded) return null;
+    const cloned = gltfState.loaded.clone(true);
+    applyKitchenCatalogGlbMaterials(cloned, catalogCabinetMaterial, doorPanelMaterial);
+    return cloned;
+  }, [gltfState.loaded, catalogCabinetMaterial, doorPanelMaterial]);
 
   const dragGroupRef = useRef<THREE.Group>(null);
   useKitchenDragGroupUserData(dragGroupRef, {
@@ -359,6 +542,41 @@ function BaseModule({
     moduleId: module.id,
     index: dragMeta.index,
   });
+
+  const showCatalogGltf = Boolean(
+    catalogGlbUrl && catalogMeshScene && gltfState.fit && !gltfState.failed,
+  );
+
+  if (showCatalogGltf && catalogMeshScene && gltfState.fit) {
+    const fit = gltfState.fit;
+    return (
+      <group
+        ref={dragGroupRef}
+        position={[X, cabinetH / 2, centerZ]}
+        onPointerDown={onCabinetPointerDown}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+      >
+        <group
+          scale={fit.scale}
+          position={[
+            -fit.center.x * fit.scale[0],
+            -fit.center.y * fit.scale[1],
+            -fit.center.z * fit.scale[2],
+          ]}
+        >
+          <primitive object={catalogMeshScene} />
+        </group>
+        {isSelected && (
+          <mesh material={selectionMat}>
+            <boxGeometry args={[W + 0.005, cabinetH + 0.005, D + 0.005]} />
+          </mesh>
+        )}
+      </group>
+    );
+  }
 
   return (
     <group
@@ -507,12 +725,6 @@ function WallModule({
     [baseCabinetMat, W, H, D, refW_m, refH_m, cabinetGrain],
   );
 
-  const placements = useKitchenPanelPlacements();
-  const panelIdPrefix = DRAG_RUN_TO_PANEL_PREFIX[dragMeta.run];
-  const doorPlacement = panelIdPrefix
-    ? placements.get(`${panelIdPrefix}.${module.id}.door`)
-    : null;
-
   const doorPanelMaterial = useMemo(
     () =>
       kitchenDoorPanelMaterial(
@@ -522,9 +734,8 @@ function WallModule({
         refW_m,
         refH_m,
         doorGrain,
-        doorPlacement,
       ),
-    [baseDoorMat, frontW, frontH, refW_m, refH_m, doorGrain, doorPlacement],
+    [baseDoorMat, frontW, frontH, refW_m, refH_m, doorGrain],
   );
 
   const selectionMat = useMemo(
@@ -541,12 +752,62 @@ function WallModule({
   const hoodDepth = D * 0.72;
   const wallCenterZ = D / 2;
 
+  const catalogGlbUrl = useResolvedKitchenCatalogGlbUrl(module);
+  const gltfState = useKitchenCatalogGltfScene(catalogGlbUrl, W, H, D);
+
+  const catalogCabinetMaterial = useMemo(
+    () => kitchenDoorPanelMaterial(baseCabinetMat, W, H, refW_m, refH_m, cabinetGrain),
+    [baseCabinetMat, W, H, refW_m, refH_m, cabinetGrain],
+  );
+
+  const catalogMeshScene = useMemo(() => {
+    if (!gltfState.loaded) return null;
+    const cloned = gltfState.loaded.clone(true);
+    applyKitchenCatalogGlbMaterials(cloned, catalogCabinetMaterial, doorPanelMaterial);
+    return cloned;
+  }, [gltfState.loaded, catalogCabinetMaterial, doorPanelMaterial]);
+
   const dragGroupRef = useRef<THREE.Group>(null);
   useKitchenDragGroupUserData(dragGroupRef, {
     run: dragMeta.run,
     moduleId: module.id,
     index: dragMeta.index,
   });
+
+  const showWallCatalogGltf = Boolean(
+    catalogGlbUrl && catalogMeshScene && gltfState.fit && !gltfState.failed,
+  );
+
+  if (showWallCatalogGltf && catalogMeshScene && gltfState.fit) {
+    const fit = gltfState.fit;
+    return (
+      <group
+        ref={dragGroupRef}
+        position={[X, Y, wallCenterZ]}
+        onPointerDown={onCabinetPointerDown}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+      >
+        <group
+          scale={fit.scale}
+          position={[
+            -fit.center.x * fit.scale[0],
+            -fit.center.y * fit.scale[1],
+            -fit.center.z * fit.scale[2],
+          ]}
+        >
+          <primitive object={catalogMeshScene} />
+        </group>
+        {isSelected && (
+          <mesh material={selectionMat}>
+            <boxGeometry args={[W + 0.005, H + 0.005, D + 0.005]} />
+          </mesh>
+        )}
+      </group>
+    );
+  }
 
   if (isHood) {
     const hoodH = H * 0.55;

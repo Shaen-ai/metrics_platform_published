@@ -44,8 +44,11 @@ class ApiClient {
     return this.request<{ data: unknown }>(`/public/${slug}`);
   }
 
-  async getCatalog(slug: string, subMode?: string) {
-    const query = subMode ? `?sub_mode=${encodeURIComponent(subMode)}` : "";
+  async getCatalog(slug: string, subMode?: string, includeLibrary = false) {
+    const params = new URLSearchParams();
+    if (subMode) params.set("sub_mode", subMode);
+    if (includeLibrary) params.set("include_library", "1");
+    const query = params.toString() ? `?${params}` : "";
     return this.request<{ data: unknown[] }>(`/public/${slug}/catalog${query}`);
   }
 

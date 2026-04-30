@@ -76,7 +76,6 @@ function addModulePanels(
 ) {
   // Skip appliances and placeholders — they don't use laminate panels.
   if (APPLIANCE_TYPES.has(m.type as BaseModuleType)) return;
-  if (m.fromAdminCatalog) return;
 
   const W = m.width;
   const H = moduleHeight(m, defaultHeight);
@@ -241,7 +240,25 @@ export interface PackerPanelPrep {
 export function panelMetaToPackerPanel(
   meta: PanelMeta,
   materialGrain: "along_width" | "along_height" | "none",
+  opts?: { optimize?: boolean },
 ): PackerPanelPrep {
+  const isDoor = meta.role === "cabinet-door";
+  if (
+    opts?.optimize &&
+    !isDoor &&
+    materialGrain !== "none"
+  ) {
+    return {
+      panel: {
+        id: meta.id,
+        widthCm: meta.widthCm,
+        heightCm: meta.heightCm,
+        grainAxis: "any",
+        label: meta.label,
+      },
+      preRotated: false,
+    };
+  }
   if (materialGrain === "none") {
     return {
       panel: {

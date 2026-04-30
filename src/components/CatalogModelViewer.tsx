@@ -44,8 +44,8 @@ export default function CatalogModelViewer({
         mv.setAttribute("field-of-view", "42deg");
         mv.setAttribute("min-field-of-view", "18deg");
         mv.setAttribute("max-field-of-view", "55deg");
-        mv.setAttribute("min-camera-orbit", "0deg 22.5deg 112%");
-        mv.setAttribute("max-camera-orbit", "180deg 90deg 400%");
+        mv.setAttribute("min-camera-orbit", "auto 22.5deg 112%");
+        mv.setAttribute("max-camera-orbit", "auto 90deg 400%");
         mv.setAttribute("shadow-intensity", "0.5");
         mv.setAttribute("exposure", "1");
         mv.setAttribute("loading", "eager");
@@ -53,6 +53,8 @@ export default function CatalogModelViewer({
         mv.style.height = "100%";
         mv.style.display = "block";
         mv.style.minHeight = "160px";
+        mv.style.transform = "translateY(-6%)";
+        mv.style.setProperty("--progress-bar-height", "0px");
 
         const onError = () => {
           if (!cancelled) setStatus("failed");
@@ -83,7 +85,7 @@ export default function CatalogModelViewer({
           src={fallbackImage}
           alt={alt}
           fill
-          className="object-cover"
+          className="object-cover object-[center_38%]"
         />
       );
     }

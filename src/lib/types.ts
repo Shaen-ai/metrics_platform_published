@@ -129,6 +129,9 @@ export interface Module {
   defaultHandleId?: string;
   templateOptions?: ModuleTemplateOptionDef[];
   allowedHandleIds?: string[];
+  /** GLB from admin when processing finished (matches public API). */
+  modelUrl?: string | null;
+  modelStatus?: "queued" | "processing" | "done" | "failed";
 }
 
 /** Customer selection for a module template (materials, handle, toggles). */
@@ -169,6 +172,8 @@ export interface Admin {
   publicSiteLayout?: string;
   publicSiteTexts?: PublicSiteTexts;
   publicSiteTheme?: PublicSiteTheme;
+  publicCatalogLayouts?: string[];
+  publicCatalogDefaultLayout?: string;
   customDesignKey?: string | null;
   entitlements?: PlanEntitlementsSnapshot;
 }

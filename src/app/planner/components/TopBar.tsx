@@ -2,6 +2,13 @@
 
 import { useMemo, useCallback } from "react";
 import { useStore } from "@/lib/store";
+import {
+  filterMaterialsForPlanner,
+  materialsFromStore,
+  upholsteryMaterialsFromStore,
+  type PlannerSwatchMaterial,
+} from "@/lib/plannerMaterials";
+import { getGlbTextureMode } from "../glbTextureMode";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { usePlannerStore } from "../store/usePlannerStore";
 import { formatPrice } from "../utils/math";
@@ -28,6 +35,7 @@ export default function TopBar() {
   const admin = useResolvedAdmin();
   const currency = admin?.currency ?? "USD";
   const addWardrobeToCart = useStore((s) => s.addWardrobeToCart);
+  const rawMaterials = useStore((s) => s.materials);
   const plannerConfig = usePlannerType();
   const placedItems = usePlannerStore((s) => s.placedItems);
   const setShowRoomDesigner = usePlannerStore((s) => s.setShowRoomDesigner);
@@ -37,6 +45,7 @@ export default function TopBar() {
   const deleteSelected = usePlannerStore((s) => s.deleteSelected);
   const rotateItem = usePlannerStore((s) => s.rotateItem);
   const updateItemColor = usePlannerStore((s) => s.updateItemColor);
+  const updateItemGltfFinishMaterial = usePlannerStore((s) => s.updateItemGltfFinishMaterial);
   const updateItemDimensions = usePlannerStore((s) => s.updateItemDimensions);
   const toggleItemMovable = usePlannerStore((s) => s.toggleItemMovable);
   const ui = usePlannerStore((s) => s.ui);
@@ -64,6 +73,30 @@ export default function TopBar() {
     if (!selectedPlaced) return null;
     return catalog.find((c) => c.id === selectedPlaced.catalogId) ?? null;
   }, [selectedPlaced, catalog]);
+
+  const filteredMaterials = useMemo(
+    () => filterMaterialsForPlanner(rawMaterials, admin?.plannerMaterialIds),
+    [rawMaterials, admin?.plannerMaterialIds],
+  );
+
+  const gltfFinishMode = useMemo(
+    () => (selectedCatalog ? getGlbTextureMode(selectedCatalog) : "board"),
+    [selectedCatalog],
+  );
+
+  const gltfFinishList = useMemo((): PlannerSwatchMaterial[] => {
+    if (filteredMaterials.length === 0) return [];
+    if (gltfFinishMode === "upholstery") {
+      return upholsteryMaterialsFromStore(filteredMaterials, admin?.companyName);
+    }
+    return materialsFromStore(filteredMaterials, admin?.companyName, {
+      forWardrobe: plannerConfig?.id !== "kitchen",
+    });
+  }, [filteredMaterials, admin?.companyName, gltfFinishMode, plannerConfig?.id]);
+
+  const showGltfFinishPicker = Boolean(
+    selectedCatalog?.modelUrl && !selectedPlaced?.wardrobeConfig,
+  );
 
   const selectedColor = selectedPlaced?.color ?? selectedCatalog?.color ?? "#888888";
 
@@ -112,7 +145,7 @@ export default function TopBar() {
             >
               <RotateCw size={16} />
             </button>
-            {!selectedPlaced?.wardrobeConfig && (
+            {!selectedPlaced?.wardrobeConfig && !selectedCatalog?.modelUrl && (
               <span className="topbar-color-picker" title="Item color">
                 <Palette size={14} />
                 <input
@@ -122,6 +155,54 @@ export default function TopBar() {
                   className="color-input"
                 />
               </span>
+            )}
+            {showGltfFinishPicker && gltfFinishList.length > 0 && (
+              <div
+                className="topbar-finish-strip"
+                title={gltfFinishMode === "upholstery" ? "Fabric / upholstery" : "Board / laminate"}
+              >
+                <span className="topbar-finish-label">
+                  {gltfFinishMode === "upholstery" ? "Fabric" : "Finish"}
+                </span>
+                <div className="topbar-finish-swatches">
+                  {selectedPlaced?.gltfFinishMaterialId && (
+                    <button
+                      type="button"
+                      className="topbar-finish-reset btn-danger-subtle"
+                      title="Use original 3D model materials"
+                      onClick={() =>
+                        selectedItemId && updateItemGltfFinishMaterial(selectedItemId, undefined)
+                      }
+                    >
+                      Reset
+                    </button>
+                  )}
+                  {gltfFinishList.map((m) => {
+                    const picked = selectedPlaced?.gltfFinishMaterialId === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`topbar-finish-swatch${picked ? " selected" : ""}`}
+                        title={m.name}
+                        onClick={() =>
+                          selectedItemId && updateItemGltfFinishMaterial(selectedItemId, m.id)
+                        }
+                      >
+                        {m.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={m.imageUrl} alt="" className="topbar-finish-swatch-img" />
+                        ) : (
+                          <span
+                            className="topbar-finish-swatch-color"
+                            style={{ background: m.color }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
             <span className="topbar-divider">|</span>
             {selectedPlaced?.wardrobeConfig ? (

@@ -10,6 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
 } from "react";
+import { createPortal } from "react-dom";
 import { X, AlertTriangle, RotateCw, FileOutput } from "lucide-react";
 import type { PackResult, Placement, Sheet } from "./panelPacker";
 import {
@@ -112,6 +113,8 @@ interface SheetViewerModalProps {
    * Wardrobe: offer CSV/XML/PDF export of nested piece sizes (as shown), not the abstract cut list.
    */
   enableSheetPieceExport?: boolean;
+  /** Optional class applied to the portal overlay for planner-specific styling. */
+  portalClassName?: string;
 }
 
 function SheetPieceExportMenu({
@@ -309,6 +312,7 @@ export default function SheetViewerModal({
   onAddManualSheet,
   wardrobeSheetSizeControl,
   enableSheetPieceExport = false,
+  portalClassName,
 }: SheetViewerModalProps) {
   const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
   const [localPlacementOverrides, setLocalPlacementOverrides] = useState<
@@ -344,19 +348,19 @@ export default function SheetViewerModal({
     );
   }, [layout.byMaterial, activeMaterialId]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[520] flex items-center justify-center p-4"
+      className={`sheet-viewer-overlay fixed inset-0 bg-black/50 backdrop-blur-sm z-[520] flex items-center justify-center p-4${portalClassName ? ` ${portalClassName}` : ""}`}
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] gap-3">
+      <div className="sheet-viewer-shell w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] shadow-2xl flex flex-col">
+        <div className="sheet-viewer-header flex items-center justify-between px-5 py-3 border-b border-[var(--border)] gap-3">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold">{title}</h2>
-            <p className="text-xs text-[var(--muted-foreground)]">
+            <h2 className="sheet-viewer-title text-lg font-semibold">{title}</h2>
+            <p className="sheet-viewer-meta text-xs text-[var(--muted-foreground)]">
               {layout.byMaterial.length} material{layout.byMaterial.length === 1 ? "" : "s"} ·{" "}
               {layout.totalSheets} sheet{layout.totalSheets === 1 ? "" : "s"}
               {layout.totalOverflow > 0 &&
@@ -372,7 +376,7 @@ export default function SheetViewerModal({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-[var(--accent)]"
+              className="sheet-viewer-close p-1.5 rounded-lg hover:bg-[var(--accent)]"
               aria-label="Close"
             >
               <X className="w-5 h-5" />
@@ -388,7 +392,7 @@ export default function SheetViewerModal({
         ) : (
           <>
             {layout.byMaterial.length > 1 && (
-              <div className="flex gap-1 px-5 pt-3 overflow-x-auto">
+              <div className="sheet-viewer-tabs flex gap-1 px-5 pt-3 overflow-x-auto">
                 {layout.byMaterial.map((m) => {
                   const active = activeMaterial?.materialId === m.materialId;
                   return (
@@ -396,9 +400,9 @@ export default function SheetViewerModal({
                       key={m.materialId}
                       type="button"
                       onClick={() => setActiveMaterialId(m.materialId)}
-                      className={`px-3 py-1.5 text-sm rounded-lg border whitespace-nowrap ${
+                      className={`sheet-viewer-tab px-3 py-1.5 text-sm rounded-lg border whitespace-nowrap ${
                         active
-                          ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
+                          ? "sheet-viewer-tab--active bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
                           : "bg-[var(--background)] border-[var(--border)] hover:bg-[var(--accent)]"
                       }`}
                     >
@@ -435,7 +439,8 @@ export default function SheetViewerModal({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -791,8 +796,8 @@ function MaterialPackingView({
   ]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-      <div className="flex items-center gap-6 text-xs text-[var(--muted-foreground)]">
+    <div className="sheet-viewer-content flex-1 overflow-y-auto px-5 py-4 space-y-4">
+      <div className="sheet-viewer-stats flex items-center gap-6 text-xs text-[var(--muted-foreground)]">
         <div>
           <span className="text-[var(--foreground)] font-medium">Sheet:</span>{" "}
           {sheet.widthCm} × {sheet.heightCm} cm · kerf {sheet.kerfCm.toFixed(1)} cm
@@ -809,7 +814,7 @@ function MaterialPackingView({
           <div className="ml-auto flex items-center gap-2 shrink-0">
             <button
               type="button"
-              className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[11px] font-medium hover:bg-[var(--accent)]"
+              className="sheet-viewer-add-btn rounded-lg border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[11px] font-medium hover:bg-[var(--accent)]"
               onClick={() => onAddManualSheet(packing.materialId)}
               title="Add another board of this material (same sheet size)"
             >
@@ -1056,9 +1061,9 @@ function SheetSvgView({
   return (
     <div
       ref={(el) => registerSheetContainerRef(sheetIndex, el)}
-      className="border border-[var(--border)] rounded-lg overflow-hidden bg-[var(--muted)]"
+      className="sheet-viewer-board border border-[var(--border)] rounded-lg overflow-hidden bg-[var(--muted)]"
     >
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border)] bg-[var(--card)] text-xs gap-2 flex-wrap">
+      <div className="sheet-viewer-board-header flex items-center justify-between px-3 py-1.5 border-b border-[var(--border)] bg-[var(--card)] text-xs gap-2 flex-wrap">
         <span className="font-medium leading-snug">
           Board {formatCmDim(sheet.widthCm)} × {formatCmDim(sheet.heightCm)} cm · Sheet{" "}
           {sheetIndex + 1} · {placements.length} piece{placements.length === 1 ? "" : "s"}
@@ -1067,7 +1072,7 @@ function SheetSvgView({
           {allowManualAdjust && placements.length > 0 && (
             <button
               type="button"
-              className="shrink-0 rounded border border-[var(--border)] px-2 py-0.5 hover:bg-[var(--accent)] text-[11px]"
+              className="sheet-viewer-reset-btn shrink-0 rounded border border-[var(--border)] px-2 py-0.5 hover:bg-[var(--accent)] text-[11px]"
               onClick={clearSheetOverrides}
             >
               Reset moves / rotations
@@ -1078,13 +1083,13 @@ function SheetSvgView({
           </span>
         </div>
       </div>
-      <div className="p-3">
+      <div className="sheet-viewer-board-body p-3">
         <svg
           ref={(el) => registerSheetSvgRef(sheetIndex, el)}
           width={wPx}
           height={hPx}
           viewBox={`0 0 ${sheet.widthCm} ${sheet.heightCm}`}
-          className={`block bg-[var(--background)] rounded border border-[var(--border)] ${allowManualAdjust ? "touch-none select-none" : ""}`}
+          className={`sheet-viewer-svg block bg-[var(--background)] rounded border border-[var(--border)] ${allowManualAdjust ? "touch-none select-none" : ""}`}
           preserveAspectRatio="none"
         >
           <defs>

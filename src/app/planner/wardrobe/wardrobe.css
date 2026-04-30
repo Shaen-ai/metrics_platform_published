@@ -31,6 +31,26 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.wardrobe-sheet-viewer.sheet-viewer-overlay {
+  --primary: #0058a3;
+  --primary-hover: #004a8c;
+  --primary-light: #e8f0fe;
+  --primary-foreground: #ffffff;
+  --surface: #ffffff;
+  --text: #111;
+  --text-secondary: #484848;
+  --text-muted: #929292;
+  --border: #dfdfdf;
+  --border-light: #ebebeb;
+  --hover: rgba(0, 0, 0, 0.04);
+  --background: #ffffff;
+  --foreground: #111;
+  --muted: #f2f2ef;
+  --muted-foreground: #929292;
+  --card: #fbfbfa;
+  --accent: rgba(0, 0, 0, 0.04);
+}
+
 /* ── Header ──────────────────────────────────────────────────────── */
 
 .planner-header {

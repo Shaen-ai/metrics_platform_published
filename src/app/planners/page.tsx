@@ -30,6 +30,26 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { plannerTranslationKey } from "@/lib/translations";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
 
+/**
+ * `admin.selectedPlannerTypes` are **catalog sub-mode slugs** (bedroom, kitchen, …), not planner route ids.
+ * Map them to hub tiles: keep 1:1 matches, add cross-cutting planners, and attach kitchen-only tools.
+ */
+function hubAllowlistFromSubModes(subModeSlugs: string[]): Set<string> | null {
+  if (!subModeSlugs || subModeSlugs.length === 0) return null;
+  const ids = new Set<string>();
+  for (const slug of subModeSlugs) {
+    ids.add(slug);
+  }
+  for (const id of ["room", "ai-room", "custom-design"] as const) {
+    ids.add(id);
+  }
+  if (subModeSlugs.includes("kitchen")) {
+    ids.add("kitchen-design");
+    ids.add("module-planner");
+  }
+  return ids;
+}
+
 const iconMap: Record<string, React.ReactNode> = {
   LayoutDashboard: <LayoutDashboard className="w-8 h-8" />,
   CookingPot: <CookingPot className="w-8 h-8" />,
@@ -60,10 +80,9 @@ export default function PlannersHubPage() {
 
   const visiblePlanners = useMemo(() => {
     const hubListed = plannerConfigs.filter((p) => p.hubVisible !== false);
-    const allowed = admin?.selectedPlannerTypes;
-    if (!allowed || allowed.length === 0) return hubListed;
-    const allowedSet = new Set(allowed);
-    return hubListed.filter((planner) => allowedSet.has(planner.id));
+    const allow = hubAllowlistFromSubModes(admin?.selectedPlannerTypes ?? []);
+    if (!allow) return hubListed;
+    return hubListed.filter((planner) => allow.has(planner.id));
   }, [admin?.selectedPlannerTypes]);
   const plannersTitle = admin?.publicSiteTexts?.plannersTitle?.trim() || t("planners.heroTitle");
   const plannersSubtitle = admin?.publicSiteTexts?.plannersSubtitle?.trim() || t("planners.heroSubtitle");

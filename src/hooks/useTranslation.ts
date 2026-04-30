@@ -4,7 +4,6 @@ import {
   useState,
   useEffect,
   useCallback,
-  useLayoutEffect,
   useContext,
 } from "react";
 import {
@@ -23,14 +22,9 @@ function notify() {
 
 export function useTranslation() {
   const tenantDefault = useContext(PublishedLanguageContext) ?? "en";
-  const [lang, setLang] = useState<LanguageCode>(() => {
-    if (typeof window === "undefined") {
-      return tenantDefault;
-    }
-    return getResolvedLanguage(tenantDefault);
-  });
+  const [lang, setLang] = useState<LanguageCode>(tenantDefault);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     setLang(getResolvedLanguage(tenantDefault));
   }, [tenantDefault]);
 

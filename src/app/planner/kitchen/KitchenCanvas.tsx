@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useKitchenStore } from "./store";
 import { useKitchenSheetLayout } from "../sheet/useKitchenSheetLayout";
+import { sortKitchenSheetPlacements } from "../sheet/kitchenSheetSort";
 import SheetViewerModal from "../sheet/SheetViewerModal";
 import type { FloorOutlinePoint } from "../types";
 import { createPlannerFloorMaterial } from "../laminateFloor";
@@ -666,31 +667,36 @@ export default function KitchenCanvas() {
       <div className="canvas-view-controls">
         <button
           type="button"
-          className={`view-btn${ui.viewMode === "perspective" ? " active" : ""}`}
+          className={`view-btn view-btn--label${ui.viewMode === "perspective" ? " active" : ""}`}
           onClick={() => setViewMode("perspective")}
           title="Perspective view"
         >
           <Maximize2 size={16} />
+          3D
         </button>
         <button
           type="button"
-          className={`view-btn${ui.viewMode === "front" ? " active" : ""}`}
+          className={`view-btn view-btn--label${ui.viewMode === "front" ? " active" : ""}`}
           onClick={() => setViewMode("front")}
           title="Front view"
         >
           <AlignLeft size={16} />
+          Front
         </button>
-        <button type="button" className="view-btn" onClick={resetCamera} title="Reset camera">
+        <button type="button" className="view-btn view-btn--label" onClick={resetCamera} title="Reset camera">
           <RotateCw size={16} />
+          Reset
         </button>
         <button
           type="button"
-          className="view-btn"
+          className="view-btn view-btn--label"
           onClick={toggleDimensions}
           title={ui.showDimensions ? "Hide dimensions" : "Show dimensions"}
         >
           {ui.showDimensions ? <Eye size={16} /> : <EyeOff size={16} />}
+          Dimensions
         </button>
+        <span className="canvas-view-sep" />
         <KitchenSheetViewerButton />
       </div>
     </div>
@@ -700,15 +706,24 @@ export default function KitchenCanvas() {
 function KitchenSheetViewerButton() {
   const [open, setOpen] = useState(false);
   const layout = useKitchenSheetLayout();
+  const sheetPlacementOverrides = useKitchenStore((s) => s.sheetPlacementOverrides);
+  const setKitchenSheetPlacementOverrides = useKitchenStore(
+    (s) => s.setKitchenSheetPlacementOverrides,
+  );
+  const bumpKitchenManualExtraSheets = useKitchenStore((s) => s.bumpKitchenManualExtraSheets);
+  const kitchenSheetSizeOverrideCm = useKitchenStore((s) => s.kitchenSheetSizeOverrideCm);
+  const setKitchenSheetSizeOverride = useKitchenStore((s) => s.setKitchenSheetSizeOverride);
+
   return (
     <>
       <button
         type="button"
-        className="view-btn"
+        className="view-btn view-btn--label"
         onClick={() => setOpen(true)}
-        title="View sheet layout"
+        title="View sheet layout — laminate cuts (drag pieces, sheet size, export)"
       >
         <Layers size={16} />
+        Sheets
         {layout.totalOverflow > 0 && (
           <span
             className="ml-0.5 inline-block w-2 h-2 rounded-full bg-red-500"
@@ -721,6 +736,18 @@ function KitchenSheetViewerButton() {
         onClose={() => setOpen(false)}
         layout={layout}
         title="Kitchen sheet layout"
+        portalClassName="kitchen-sheet-viewer"
+        sortPlacements={sortKitchenSheetPlacements}
+        allowManualAdjust
+        placementOverrides={sheetPlacementOverrides}
+        setPlacementOverrides={setKitchenSheetPlacementOverrides}
+        colorizeBySection
+        wardrobeSheetSizeControl={{
+          value: kitchenSheetSizeOverrideCm,
+          onChange: setKitchenSheetSizeOverride,
+        }}
+        onAddManualSheet={bumpKitchenManualExtraSheets}
+        enableSheetPieceExport
       />
     </>
   );

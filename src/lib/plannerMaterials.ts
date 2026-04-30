@@ -110,6 +110,7 @@ const ROUGHNESS_BY_TYPE: RoughnessMap = {
   glass: 0.15,
   stone: 0.6,
   fabric: 0.95,
+  boucle: 0.96,
   plastic: 0.5,
   leather: 0.75,
   handle: 0.35,
@@ -132,6 +133,7 @@ const SURFACE_BY_TYPE: Record<string, "wood" | "matte" | "gloss" | "stone" | "me
   stone: "stone",
   fabric: "matte",
   plastic: "gloss",
+  boucle: "matte",
   leather: "matte",
   handle: "metal",
   slide: "metal",
@@ -279,6 +281,27 @@ export function worktopMaterialsFromStore(
   if (w.length === 0) return [];
   const cheapest = Math.min(...w.map((m) => m.pricePerUnit));
   return w.map((m) => mapMaterial(m, cheapest, manufacturerName));
+}
+
+export function isUpholsteryFabricMaterial(m: Material): boolean {
+  if (materialCategorySlugs(m).some((c) => c === "upholstery")) return true;
+  return materialTypeSlugs(m).some((t) => {
+    const x = t.toLowerCase();
+    return x === "fabric" || x === "leather" || x === "boucle";
+  });
+}
+
+/**
+ * Soft seating / upholstery swatches (fabric, leather, Bouclé, or category upholstery).
+ */
+export function upholsteryMaterialsFromStore(
+  storeMaterials: Material[],
+  manufacturerName?: string,
+): PlannerSwatchMaterial[] {
+  const items = storeMaterials.filter(isUpholsteryFabricMaterial);
+  if (items.length === 0) return [];
+  const cheapest = Math.min(...items.map((m) => m.pricePerUnit));
+  return items.map((m) => mapMaterial(m, cheapest, manufacturerName));
 }
 
 /**

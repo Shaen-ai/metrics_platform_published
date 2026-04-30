@@ -1,16 +1,20 @@
 "use client";
 
-import { useRef, useEffect, useMemo, useState, memo } from "react";
+import { useRef, useEffect, useLayoutEffect, useMemo, useState, memo } from "react";
 import * as THREE from "three";
-import { Edges } from "@react-three/drei";
+import { Edges, useTexture } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { PlacedItem, PlannerCatalogItem } from "../types";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
-import { publicApiUrl } from "@/lib/publicEnv";
-import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
 import {
+  filterMaterialsForPlanner,
   materialsFromStore,
+  upholsteryMaterialsFromStore,
+} from "@/lib/plannerMaterials";
+import { publicApiUrl } from "@/lib/publicEnv";
+import {
+  materialsFromStore as wardrobeMaterialsFromStore,
   doorFrontMaterialsFromStore,
   slidingMechanismsFromStore,
   handleMaterialsFromStore,
@@ -18,6 +22,16 @@ import {
 } from "../wardrobe/data";
 import { WardrobeModulesInRoom } from "../wardrobe/WardrobeModulesInRoom";
 import type { WardrobeRoomEmbedValue } from "../wardrobe/WardrobeRoomContext";
+import { usePlannerType } from "../context";
+import {
+  getGlbTextureMode,
+  plannerSwatchToWardrobeMaterial,
+} from "../glbTextureMode";
+import {
+  buildMaterialFromSwatch,
+  proxyTextureUrl,
+  PLACEHOLDER_URL,
+} from "../shared/buildPhysicalMaterialFromSwatch";
 
 interface FurnitureMeshProps {
   item: PlacedItem;
@@ -31,7 +45,10 @@ function plannerModelUrl(url: string): string {
   try {
     const apiOrigin = new URL(publicApiUrl).origin;
     const parsed = new URL(url, window.location.origin);
-    if (parsed.origin === apiOrigin && (parsed.pathname.startsWith("/storage/") || parsed.pathname.startsWith("/files/"))) {
+    if (
+      parsed.origin === apiOrigin &&
+      (parsed.pathname.startsWith("/storage/") || parsed.pathname.startsWith("/files/"))
+    ) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
     return parsed.href;
@@ -40,9 +57,29 @@ function plannerModelUrl(url: string): string {
   }
 }
 
+function meshShouldReceiveGlbOverride(mesh: THREE.Mesh): boolean {
+  const n = mesh.name?.toLowerCase() ?? "";
+  if (/glass|mirror|chrome|handle|knob|hardware|wheel/i.test(n)) return false;
+  const m = mesh.material;
+  const mats = Array.isArray(m) ? m : [m];
+  for (const mat of mats) {
+    if (!(mat instanceof THREE.MeshStandardMaterial) && !(mat instanceof THREE.MeshPhysicalMaterial)) {
+      return false;
+    }
+    if (mat.transparent && mat.opacity < 0.95) return false;
+    if (mat instanceof THREE.MeshPhysicalMaterial && (mat.transmission ?? 0) > 0.5) return false;
+  }
+  return true;
+}
+
 // ── Fallback box renderer (items without a model) ──────────────────────
 
-const BoxFallback = memo(function BoxFallback({ item, catalogItem, isSelected, isLocked }: FurnitureMeshProps) {
+const BoxFallback = memo(function BoxFallback({
+  item,
+  catalogItem,
+  isSelected,
+  isLocked,
+}: FurnitureMeshProps) {
   const width = item.width ?? catalogItem.width;
   const depth = item.depth ?? catalogItem.depth;
   const height = item.height ?? catalogItem.height;
@@ -73,9 +110,158 @@ const BoxFallback = memo(function BoxFallback({ item, catalogItem, isSelected, i
   );
 });
 
+type Fit = {
+  box: THREE.Box3;
+  center: THREE.Vector3;
+  scale: number;
+};
+
+const CatalogGltfScenePrimitive = memo(function CatalogGltfScenePrimitive({
+  scene,
+  fit,
+  item,
+  catalogItem,
+  width,
+  depth,
+  height,
+  isLocked,
+}: {
+  scene: THREE.Group;
+  fit: Fit;
+  item: PlacedItem;
+  catalogItem: PlannerCatalogItem;
+  width: number;
+  depth: number;
+  height: number;
+  isLocked?: boolean;
+}) {
+  const admin = useResolvedAdmin();
+  const rawMaterials = useStore((s) => s.materials);
+  const plannerType = usePlannerType();
+  const materials = useMemo(
+    () => filterMaterialsForPlanner(rawMaterials, admin?.plannerMaterialIds),
+    [rawMaterials, admin?.plannerMaterialIds],
+  );
+
+  const boardSwatches = useMemo(
+    () =>
+      materialsFromStore(materials, admin?.companyName, {
+        forWardrobe: plannerType?.id !== "kitchen",
+      }),
+    [materials, admin?.companyName, plannerType?.id],
+  );
+
+  const upholSwatches = useMemo(
+    () => upholsteryMaterialsFromStore(materials, admin?.companyName),
+    [materials, admin?.companyName],
+  );
+
+  const mode = useMemo(() => getGlbTextureMode(catalogItem), [catalogItem]);
+  const activeList = mode === "upholstery" ? upholSwatches : boardSwatches;
+  const finishId = item.gltfFinishMaterialId;
+  const swatch = finishId ? activeList.find((s) => s.id === finishId) : undefined;
+
+  const wm = useMemo(
+    () => (swatch ? plannerSwatchToWardrobeMaterial(swatch) : null),
+    [swatch],
+  );
+
+  const imageSource = swatch?.imageUrl;
+  const textureUrl = wm ? (imageSource ? proxyTextureUrl(imageSource) : PLACEHOLDER_URL) : PLACEHOLDER_URL;
+  const texture = useTexture(textureUrl);
+  const externalTexture = wm && imageSource ? texture : null;
+
+  const overrideMaterial = useMemo(() => {
+    if (!wm || !finishId) return null;
+    return buildMaterialFromSwatch(wm, externalTexture, 0, "horizontal");
+  }, [wm, externalTexture, finishId]);
+
+  const originalsRef = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map());
+  const disposedOverrideRef = useRef<THREE.MeshPhysicalMaterial | null>(null);
+
+  useLayoutEffect(() => {
+    originalsRef.current.clear();
+    scene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        originalsRef.current.set(mesh, mesh.material);
+      }
+    });
+  }, [scene]);
+
+  useLayoutEffect(() => {
+    if (disposedOverrideRef.current) {
+      disposedOverrideRef.current.dispose();
+      disposedOverrideRef.current = null;
+    }
+
+    if (!overrideMaterial) {
+      originalsRef.current.forEach((orig, mesh) => {
+        mesh.material = orig;
+      });
+      return;
+    }
+
+    disposedOverrideRef.current = overrideMaterial;
+    originalsRef.current.forEach((orig, mesh) => {
+      if (meshShouldReceiveGlbOverride(mesh)) {
+        mesh.material = overrideMaterial;
+      } else {
+        mesh.material = orig;
+      }
+    });
+
+    return () => {
+      if (disposedOverrideRef.current) {
+        disposedOverrideRef.current.dispose();
+        disposedOverrideRef.current = null;
+      }
+      originalsRef.current.forEach((orig, mesh) => {
+        mesh.material = orig;
+      });
+    };
+  }, [overrideMaterial, finishId, scene]);
+
+  useEffect(() => {
+    scene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.userData.itemId = item.id;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+  }, [item.id, scene]);
+
+  return (
+    <group>
+      <primitive
+        object={scene}
+        position={[
+          -fit.center.x * fit.scale,
+          -fit.box.min.y * fit.scale,
+          -fit.center.z * fit.scale,
+        ]}
+        scale={fit.scale}
+      />
+      {isLocked && (
+        <group position={[0, height / 2, 0]}>
+          <lineSegments>
+            <edgesGeometry args={[new THREE.BoxGeometry(width, height, depth)]} />
+            <lineBasicMaterial color="#F44336" />
+          </lineSegments>
+        </group>
+      )}
+    </group>
+  );
+});
+
 const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProps) {
   const { item, catalogItem, isLocked } = props;
-  const [model, setModel] = useState<{ url?: string; scene: THREE.Group | null; failed: boolean }>({
+  const [model, setModel] = useState<{
+    url?: string;
+    scene: THREE.Group | null;
+    failed: boolean;
+  }>({
     url: catalogItem.modelUrl,
     scene: null,
     failed: false,
@@ -110,17 +296,6 @@ const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProp
   const scene = model.url === url ? model.scene : null;
   const failed = model.url === url ? model.failed : false;
 
-  useEffect(() => {
-    if (!scene) return;
-    scene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        child.userData.itemId = item.id;
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-  }, [item.id, scene]);
-
   const fit = useMemo(() => {
     if (!scene) return null;
     const box = new THREE.Box3().setFromObject(scene);
@@ -140,27 +315,17 @@ const CatalogModelMesh = memo(function CatalogModelMesh(props: FurnitureMeshProp
   const yPos = item.positionY ?? 0;
 
   return (
-    <group
-      position={[item.position.x, yPos, item.position.z]}
-      rotation={[0, item.rotationY, 0]}
-    >
-      <primitive
-        object={scene}
-        position={[
-          -fit.center.x * fit.scale,
-          -fit.box.min.y * fit.scale,
-          -fit.center.z * fit.scale,
-        ]}
-        scale={fit.scale}
+    <group position={[item.position.x, yPos, item.position.z]} rotation={[0, item.rotationY, 0]}>
+      <CatalogGltfScenePrimitive
+        scene={scene}
+        fit={fit}
+        item={item}
+        catalogItem={catalogItem}
+        width={width}
+        depth={depth}
+        height={height}
+        isLocked={isLocked}
       />
-      {isLocked && (
-        <group position={[0, height / 2, 0]}>
-          <lineSegments>
-            <edgesGeometry args={[new THREE.BoxGeometry(width, height, depth)]} />
-            <lineBasicMaterial color="#F44336" />
-          </lineSegments>
-        </group>
-      )}
     </group>
   );
 });
@@ -181,7 +346,7 @@ const PlacedWardrobeMesh = memo(function PlacedWardrobeMesh(props: FurnitureMesh
     if (!item.wardrobeConfig) return null;
     return {
       config: item.wardrobeConfig,
-      availableMaterials: materialsFromStore(materials, admin?.companyName),
+      availableMaterials: wardrobeMaterialsFromStore(materials, admin?.companyName),
       availableDoorMaterials: withDefaultWardrobeDoorFinishes(
         doorFrontMaterialsFromStore(materials, admin?.companyName),
       ),

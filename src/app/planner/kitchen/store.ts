@@ -15,15 +15,11 @@ import type {
   DesignRefKind,
 } from "./types";
 import type { FloorStyle } from "../types";
-import type { KitchenMaterial } from "./data";
 import type { Module } from "@/lib/types";
 import {
   NEUTRAL_KITCHEN_MATERIAL,
   NEUTRAL_KITCHEN_MATERIAL_ID,
-  BASE_MODULE_CATALOG,
-  WALL_MODULE_CATALOG,
-  getBaseModuleLimits,
-  getWallModuleLimits,
+  limitsForKitchenModuleEdit,
   getEffectiveWallDims,
   normalizeKitchenConfig,
   defaultIslandConfig,
@@ -40,6 +36,21 @@ import type { KitchenModule } from "./types";
 
 function clampDim(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
+}
+
+function moduleDimensionToCm(value: number, unit?: string): number {
+  if (!Number.isFinite(value)) return 0;
+  const normalizedUnit = unit?.trim().toLowerCase();
+  if (normalizedUnit === "in" || normalizedUnit === "inch" || normalizedUnit === "inches") {
+    return value * 2.54;
+  }
+  if (normalizedUnit === "mm" || normalizedUnit === "millimeter" || normalizedUnit === "millimeters") {
+    return value / 10;
+  }
+  if (normalizedUnit === "m" || normalizedUnit === "meter" || normalizedUnit === "meters") {
+    return value * 100;
+  }
+  return value;
 }
 
 const ROOM_HEIGHT_CM = 300;
@@ -142,6 +153,7 @@ interface PersistedData {
   config: KitchenConfig;
   room?: RoomSettings;
   kitchenDesignSetupComplete?: boolean;
+  kitchenSheetSizeOverrideCm?: import("./types").KitchenSheetSizeOverrideCm | null;
 }
 
 function loadFromStorage(): PersistedData | null {
@@ -165,13 +177,22 @@ function saveToStorage(data: PersistedData) {
 /** Persist using `s` = state *before* the incoming `set` return (correct `config`/`room` from closure). */
 function persistSliceValues(
   s: KitchenState,
-  patch: Partial<Pick<KitchenState, "config" | "room" | "kitchenDesignSetupComplete">>,
+  patch: Partial<
+    Pick<
+      KitchenState,
+      "config" | "room" | "kitchenDesignSetupComplete" | "kitchenSheetSizeOverrideCm"
+    >
+  >,
 ) {
   saveToStorage({
     config: patch.config ?? s.config,
     room: patch.room ?? s.room,
     kitchenDesignSetupComplete:
       patch.kitchenDesignSetupComplete ?? s.kitchenDesignSetupComplete,
+    kitchenSheetSizeOverrideCm:
+      patch.kitchenSheetSizeOverrideCm !== undefined
+        ? patch.kitchenSheetSizeOverrideCm
+        : s.kitchenSheetSizeOverrideCm,
   });
 }
 
@@ -282,6 +303,10 @@ export const useKitchenStore = create<KitchenState>()(
       availableWorktopMaterials: [],
       availableHandleMaterials: [],
 
+      sheetPlacementOverrides: {},
+      sheetManualExtraSheetsByMaterial: {},
+      kitchenSheetSizeOverrideCm: persisted?.kitchenSheetSizeOverrideCm ?? null,
+
       history: [structuredClone(initialConfig)],
       historyIndex: 0,
       canUndo: false,
@@ -296,13 +321,40 @@ export const useKitchenStore = create<KitchenState>()(
 
       setAvailableWorktopMaterials: (worktops) => set({ availableWorktopMaterials: worktops }),
 
+      setKitchenSheetPlacementOverrides: (update) =>
+        set((s) => ({
+          sheetPlacementOverrides:
+            typeof update === "function" ? update(s.sheetPlacementOverrides) : update,
+        })),
+
+      clearKitchenSheetPlacementOverrides: () =>
+        set({ sheetPlacementOverrides: {}, sheetManualExtraSheetsByMaterial: {} }),
+
+      bumpKitchenManualExtraSheets: (materialId: string) =>
+        set((s) => ({
+          sheetManualExtraSheetsByMaterial: {
+            ...s.sheetManualExtraSheetsByMaterial,
+            [materialId]: (s.sheetManualExtraSheetsByMaterial[materialId] ?? 0) + 1,
+          },
+        })),
+
+      setKitchenSheetSizeOverride: (value) =>
+        set((s) => {
+          persistSliceValues(s, { kitchenSheetSizeOverrideCm: value });
+          return {
+            kitchenSheetSizeOverrideCm: value,
+            sheetPlacementOverrides: {},
+            sheetManualExtraSheetsByMaterial: {},
+          };
+        }),
+
       // ── Base modules ──
 
       addBaseModule: (type: BaseModuleType, opts?: { width?: number }) =>
         set((s) => {
           const width = resolveAddModuleWidth("base", type, opts?.width);
-          const module = { id: uuidv4(), type, width };
-          const config = { ...s.config, baseModules: [...s.config.baseModules, module] };
+          const kitchenModule = { id: uuidv4(), type, width };
+          const config = { ...s.config, baseModules: [...s.config.baseModules, kitchenModule] };
           persistSliceValues(s, { config });
           pushHistory(set, get, config);
           return { config };
@@ -310,20 +362,36 @@ export const useKitchenStore = create<KitchenState>()(
 
       addModuleFromAdminCatalog: (m: Module) =>
         set((s) => {
-          const w = Math.round(m.dimensions.width);
-          const h = Math.round(m.dimensions.height);
-          const d = Math.round(m.dimensions.depth);
+          const w = Math.round(moduleDimensionToCm(m.dimensions.width, m.dimensions.unit));
+          const h = Math.round(moduleDimensionToCm(m.dimensions.height, m.dimensions.unit));
+          const d = Math.round(moduleDimensionToCm(m.dimensions.depth, m.dimensions.unit));
+          const catalogReadyUrl =
+            m.modelUrl &&
+            (m.modelStatus === undefined || m.modelStatus === "done")
+              ? m.modelUrl
+              : undefined;
+          const catalogFields = {
+            adminCatalogModuleId: m.id,
+            adminCatalogModelUrl: catalogReadyUrl,
+          };
           if (m.placementType === "floor") {
             const type = inferKitchenBaseTypeFromName(m.name);
-            const lim = getBaseModuleLimits(type);
             const id = uuidv4();
-            const km = {
+            const tmp: KitchenModule = {
               id,
               type,
+              width: w,
+              heightCm: h,
+              depthCm: d,
+              fromAdminCatalog: true,
+              ...catalogFields,
+            };
+            const lim = limitsForKitchenModuleEdit(tmp);
+            const km = {
+              ...tmp,
               width: clampDim(w, lim.minW, lim.maxW),
               heightCm: clampDim(h, lim.minH, lim.maxH),
               depthCm: clampDim(d, lim.minD, lim.maxD),
-              fromAdminCatalog: true,
             };
             const config = { ...s.config, baseModules: [...s.config.baseModules, km] };
             persistSliceValues(s, { config });
@@ -341,14 +409,22 @@ export const useKitchenStore = create<KitchenState>()(
             };
           }
           const type = inferKitchenWallTypeFromName(m.name);
-          const lim = getWallModuleLimits(type);
           const id = uuidv4();
-          const kmBase: KitchenModule = {
+          const kmDraft: KitchenModule = {
             id,
             type,
-            width: clampDim(w, lim.minW, lim.maxW),
-            heightCm: clampDim(h, lim.minH, lim.maxH),
-            depthCm: clampDim(d, lim.minD, lim.maxD),
+            width: w,
+            heightCm: h,
+            depthCm: d,
+            fromAdminCatalog: true,
+            ...catalogFields,
+          };
+          const wlim = limitsForKitchenModuleEdit(kmDraft);
+          const kmBase: KitchenModule = {
+            ...kmDraft,
+            width: clampDim(w, wlim.minW, wlim.maxW),
+            heightCm: clampDim(h, wlim.minH, wlim.maxH),
+            depthCm: clampDim(d, wlim.minD, wlim.maxD),
           };
           const pos = findFreeWallPosition(kmBase, s.config.wallModules, s.config.baseModules, s.room);
           const km: KitchenModule = { ...kmBase, xCm: pos.xCm, yCm: pos.yCm };
@@ -396,7 +472,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config,
             baseModules: s.config.baseModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return { ...m, width: clampDim(width, lim.minW, lim.maxW) };
             }),
           };
@@ -411,7 +487,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config,
             baseModules: s.config.baseModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               const next = { ...m };
               if (patch.width !== undefined)
                 next.width = clampDim(patch.width, lim.minW, lim.maxW);
@@ -457,8 +533,8 @@ export const useKitchenStore = create<KitchenState>()(
           const width = resolveAddModuleWidth("wall", type, opts?.width);
           const mod: KitchenModule = { id: uuidv4(), type, width };
           const pos = findFreeWallPosition(mod, s.config.wallModules, s.config.baseModules, s.room);
-          const module: KitchenModule = { ...mod, xCm: pos.xCm, yCm: pos.yCm };
-          const config = { ...s.config, wallModules: [...s.config.wallModules, module] };
+          const kitchenModule: KitchenModule = { ...mod, xCm: pos.xCm, yCm: pos.yCm };
+          const config = { ...s.config, wallModules: [...s.config.wallModules, kitchenModule] };
           persistSliceValues(s, { config });
           pushHistory(set, get, config);
           return { config };
@@ -488,7 +564,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config,
             wallModules: s.config.wallModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getWallModuleLimits(m.type as WallModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return { ...m, width: clampDim(width, lim.minW, lim.maxW) };
             }),
           };
@@ -503,7 +579,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config,
             wallModules: s.config.wallModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getWallModuleLimits(m.type as WallModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               const next = { ...m };
               if (patch.width !== undefined)
                 next.width = clampDim(patch.width, lim.minW, lim.maxW);
@@ -599,7 +675,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.island,
             baseModules: s.config.island.baseModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return { ...m, width: clampDim(width, lim.minW, lim.maxW) };
             }),
           };
@@ -615,7 +691,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.island,
             baseModules: s.config.island.baseModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               const next = { ...m };
               if (patch.width !== undefined)
                 next.width = clampDim(patch.width, lim.minW, lim.maxW);
@@ -693,7 +769,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.island,
             wallModules: s.config.island.wallModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getWallModuleLimits(m.type as WallModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return { ...m, width: clampDim(width, lim.minW, lim.maxW) };
             }),
           };
@@ -709,7 +785,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.island,
             wallModules: s.config.island.wallModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getWallModuleLimits(m.type as WallModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               const next = { ...m };
               if (patch.width !== undefined)
                 next.width = clampDim(patch.width, lim.minW, lim.maxW);
@@ -862,7 +938,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.leftWall,
             baseModules: s.config.leftWall.baseModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return { ...m, width: clampDim(width, lim.minW, lim.maxW) };
             }),
           };
@@ -878,7 +954,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.leftWall,
             baseModules: s.config.leftWall.baseModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getBaseModuleLimits(m.type as BaseModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               const next = { ...m };
               if (patch.width !== undefined)
                 next.width = clampDim(patch.width, lim.minW, lim.maxW);
@@ -956,7 +1032,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.leftWall,
             wallModules: s.config.leftWall.wallModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getWallModuleLimits(m.type as WallModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               return { ...m, width: clampDim(width, lim.minW, lim.maxW) };
             }),
           };
@@ -972,7 +1048,7 @@ export const useKitchenStore = create<KitchenState>()(
             ...s.config.leftWall,
             wallModules: s.config.leftWall.wallModules.map((m) => {
               if (m.id !== id) return m;
-              const lim = getWallModuleLimits(m.type as WallModuleType);
+              const lim = limitsForKitchenModuleEdit(m);
               const next = { ...m };
               if (patch.width !== undefined)
                 next.width = clampDim(patch.width, lim.minW, lim.maxW);
@@ -1449,6 +1525,9 @@ export const useKitchenStore = create<KitchenState>()(
           },
           kitchenDesignSetupComplete: false,
           ui: { ...defaultUI },
+          sheetPlacementOverrides: {},
+          sheetManualExtraSheetsByMaterial: {},
+          kitchenSheetSizeOverrideCm: null,
           history: [structuredClone(freshConfig)],
           historyIndex: 0,
           canUndo: false,

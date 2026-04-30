@@ -6,6 +6,16 @@
 /** -1 = frame / plinth / sides not tied to a numbered bay. */
 export function wardrobePanelSectionGroup(panelId: string): number {
   const base = (panelId.split("#")[0] ?? panelId).split(".addon.")[0] ?? "";
+
+  const mKitchen = /^(?:main|island|left)\.(?:base|wall)\.([^.]+)\./.exec(base);
+  if (mKitchen) {
+    let hash = 0;
+    for (const ch of mKitchen[1]!) {
+      hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+    }
+    return Math.abs(hash % 64);
+  }
+
   const mShelf = /^interior\.(?:shelf|drawer)\.(\d+)\./.exec(base);
   if (mShelf) return parseInt(mShelf[1]!, 10);
   const mHinged = /^door\.hinged\.(\d+)\./.exec(base);

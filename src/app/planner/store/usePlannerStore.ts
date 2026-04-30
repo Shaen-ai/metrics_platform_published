@@ -206,7 +206,7 @@ export const usePlannerStore = create<PlannerState>()(
         const slug = adminSlug || "demo";
         const type = plannerType || "room";
         const subMode = type && type !== "room" ? type : undefined;
-        const apiRes = await api.getCatalog(slug, subMode);
+        const apiRes = await api.getCatalog(slug, subMode, true);
 
         const apiItems = (apiRes.data as CatalogItem[]).map((item): PlannerCatalogItem => {
           const sizes = item.sizes || item.dimensions;
@@ -216,6 +216,8 @@ export const usePlannerStore = create<PlannerState>()(
             id: item.id,
             name: item.name,
             category: item.category,
+            additionalCategories: item.additionalCategories,
+            allCategories: item.allCategories,
             vendor: "",
             price: item.price,
             width: Math.round((sizes?.width || 80) * toMeters * 1e4) / 1e4,
@@ -528,6 +530,15 @@ export const usePlannerStore = create<PlannerState>()(
           return { ...item, position: clamped };
         });
 
+        persist(s.plannerType, { ...persistedSlice(s), placedItems });
+        return { placedItems };
+      }),
+
+    updateItemGltfFinishMaterial: (id, materialId) =>
+      set((s) => {
+        const placedItems = s.placedItems.map((item) =>
+          item.id === id ? { ...item, gltfFinishMaterialId: materialId } : item
+        );
         persist(s.plannerType, { ...persistedSlice(s), placedItems });
         return { placedItems };
       }),

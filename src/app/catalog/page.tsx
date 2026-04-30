@@ -17,6 +17,7 @@ import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
 
 type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc";
 type LayoutMode = "grid" | "list" | "masonry" | "magazine" | "showcase" | "reels" | "commerce" | "gallery";
+type LayoutOption = { id: LayoutMode; label: string; icon: React.ReactNode };
 
 const MASONRY_ASPECTS = ["aspect-[3/4]", "aspect-square", "aspect-[4/3]"] as const;
 
@@ -51,24 +52,60 @@ function useDragNav(itemId: string) {
 
 // ─── Media renderer (shared by all card types) ──────────────────────────────
 
-function ItemMedia({ item, className }: { item: CatalogItem; className?: string }) {
+function ItemMedia({
+  item,
+  className,
+  onOpen,
+}: {
+  item: CatalogItem;
+  className?: string;
+  onOpen: () => void;
+}) {
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const dragged = useRef(false);
+  const td = getCatalog3dPresentation(item);
+  if (td === "viewer" && item.modelUrl) {
+    const onPointerDown = (e: React.PointerEvent) => {
+      e.stopPropagation();
+      pointerStart.current = { x: e.clientX, y: e.clientY };
+      dragged.current = false;
+    };
+
+    const onPointerMove = (e: React.PointerEvent) => {
+      e.stopPropagation();
+      if (!pointerStart.current) return;
+      const dx = e.clientX - pointerStart.current.x;
+      const dy = e.clientY - pointerStart.current.y;
+      if (dx * dx + dy * dy > 25) dragged.current = true;
+    };
+
+    const onPointerUp = (e: React.PointerEvent) => {
+      e.stopPropagation();
+      if (!dragged.current) onOpen();
+      pointerStart.current = null;
+    };
+
+    return (
+      <div
+        className={`absolute inset-0 bg-[var(--muted)] ${className || ""}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CatalogModelViewer src={item.modelUrl} alt={item.name} />
+      </div>
+    );
+  }
+
   if (item.images[0]) {
     return (
       <Image
         src={item.images[0]}
         alt={item.name}
         fill
-        className={`object-cover transition-transform duration-500 group-hover:scale-105 ${className || ""}`}
+        className={`object-cover object-[center_38%] transition-transform duration-500 group-hover:scale-105 ${className || ""}`}
       />
-    );
-  }
-
-  const td = getCatalog3dPresentation(item);
-  if (td === "viewer" && item.modelUrl) {
-    return (
-      <div className={`absolute inset-0 bg-[var(--muted)] ${className || ""}`}>
-        <CatalogModelViewer src={item.modelUrl} alt={item.name} />
-      </div>
     );
   }
 
@@ -102,7 +139,7 @@ function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: Catalog
       onClick={nav}
     >
       <div className={`${aspectClass} relative bg-[var(--muted)] overflow-hidden`}>
-        <ItemMedia item={item} />
+        <ItemMedia item={item} onOpen={nav} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent
                         opacity-0 group-hover:opacity-100 transition-opacity duration-300
                         pointer-events-none flex items-end justify-center pb-5">
@@ -149,7 +186,7 @@ function ShowcaseCard({ item }: { item: CatalogItem }) {
       onClick={nav}
     >
       <div className="relative shrink-0 overflow-hidden bg-[var(--muted)]" style={{ width: "42%", minHeight: 148 }}>
-        <ItemMedia item={item} />
+        <ItemMedia item={item} onOpen={nav} />
       </div>
       <div className="flex-1 min-w-0 p-4 flex flex-col justify-between">
         <div>
@@ -185,7 +222,7 @@ function MagazineHero({ item }: { item: CatalogItem }) {
       onClick={nav}
     >
       <div className="absolute inset-0 bg-[var(--muted)]">
-        <ItemMedia item={item} />
+        <ItemMedia item={item} onOpen={nav} />
       </div>
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)" }} />
@@ -228,7 +265,7 @@ function ReelCard({ item }: { item: CatalogItem }) {
       onClick={nav}
     >
       <div className="absolute inset-0 bg-[var(--muted)]">
-        <ItemMedia item={item} />
+        <ItemMedia item={item} onOpen={nav} />
       </div>
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0.08) 75%, transparent 100%)" }} />
@@ -259,7 +296,7 @@ function GalleryCell({ item }: { item: CatalogItem }) {
       style={{ aspectRatio: "1/1" }}
       onClick={nav}
     >
-      <ItemMedia item={item} />
+      <ItemMedia item={item} onOpen={nav} />
       <div className="absolute inset-0 flex flex-col items-center justify-end pb-3 px-2
                       opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)" }}>
@@ -284,7 +321,7 @@ function GalleryCell({ item }: { item: CatalogItem }) {
 
 // ─── Layout switcher icons ──────────────────────────────────────────────────
 
-const LAYOUT_OPTIONS: { id: LayoutMode; label: string; icon: React.ReactNode }[] = [
+const LAYOUT_OPTIONS: LayoutOption[] = [
   {
     id: "grid", label: "Grid",
     icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="8" y="1" width="5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="1" y="8" width="5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="8" y="8" width="5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/></svg>,
@@ -319,10 +356,37 @@ const LAYOUT_OPTIONS: { id: LayoutMode; label: string; icon: React.ReactNode }[]
   },
 ];
 
-function LayoutSwitcher({ active, onChange }: { active: LayoutMode; onChange: (l: LayoutMode) => void }) {
+const ALL_LAYOUT_IDS = LAYOUT_OPTIONS.map((option) => option.id);
+
+function isLayoutMode(value: string | undefined): value is LayoutMode {
+  return Boolean(value && ALL_LAYOUT_IDS.includes(value as LayoutMode));
+}
+
+function getEnabledLayouts(configured?: string[]): LayoutMode[] {
+  const enabled = (configured || []).filter(isLayoutMode);
+  return enabled.length > 0 ? enabled : ALL_LAYOUT_IDS;
+}
+
+function getDefaultLayout(enabledLayouts: LayoutMode[], configuredDefault?: string): LayoutMode {
+  if (isLayoutMode(configuredDefault) && enabledLayouts.includes(configuredDefault)) {
+    return configuredDefault;
+  }
+  return enabledLayouts[0] || "grid";
+}
+
+function LayoutSwitcher({
+  active,
+  options,
+  onChange,
+}: {
+  active: LayoutMode;
+  options: LayoutOption[];
+  onChange: (l: LayoutMode) => void;
+}) {
+  if (options.length <= 1) return null;
   return (
     <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white border border-[var(--border)] shadow-sm">
-      {LAYOUT_OPTIONS.map(({ id, label, icon }) => (
+      {options.map(({ id, label, icon }) => (
         <button
           key={id}
           onClick={() => onChange(id)}
@@ -366,20 +430,37 @@ export default function CatalogPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("featured");
-  const [layout, setLayout] = useState<LayoutMode>(() => {
+  const [layoutOverride, setLayoutOverride] = useState<{ key: string; layout: LayoutMode } | null>(null);
+  const enabledLayouts = useMemo(
+    () => getEnabledLayouts(admin?.publicCatalogLayouts),
+    [admin?.publicCatalogLayouts],
+  );
+  const defaultLayout = useMemo(
+    () => getDefaultLayout(enabledLayouts, admin?.publicCatalogDefaultLayout),
+    [admin?.publicCatalogDefaultLayout, enabledLayouts],
+  );
+  const visibleLayoutOptions = useMemo(
+    () => LAYOUT_OPTIONS.filter((option) => enabledLayouts.includes(option.id)),
+    [enabledLayouts],
+  );
+  const catalogLayoutStorageKey = `catalog-layout:${admin?.slug || "default"}`;
+  const storedLayout = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const stored = localStorage.getItem(catalogLayoutStorageKey) || undefined;
+    return isLayoutMode(stored) ? stored : null;
+  }, [catalogLayoutStorageKey]);
+  const preferredLayout = layoutOverride?.key === catalogLayoutStorageKey ? layoutOverride.layout : storedLayout;
+  const layout = preferredLayout && enabledLayouts.includes(preferredLayout) ? preferredLayout : defaultLayout;
+  const handleLayoutChange = (nextLayout: LayoutMode) => {
+    setLayoutOverride({ key: catalogLayoutStorageKey, layout: nextLayout });
     if (typeof window !== "undefined") {
-      return (localStorage.getItem("catalog-layout") as LayoutMode) || "grid";
+      localStorage.setItem(catalogLayoutStorageKey, nextLayout);
     }
-    return "grid";
-  });
+  };
 
   useEffect(() => {
     initializeStore();
   }, [initializeStore]);
-
-  useEffect(() => {
-    localStorage.setItem("catalog-layout", layout);
-  }, [layout]);
 
   const categories = useMemo(() => {
     const displayAndCount = new Map<string, { label: string; count: number }>();
@@ -618,7 +699,7 @@ export default function CatalogPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </div>
-            <LayoutSwitcher active={layout} onChange={setLayout} />
+            <LayoutSwitcher active={layout} options={visibleLayoutOptions} onChange={handleLayoutChange} />
           </div>
         </div>
 

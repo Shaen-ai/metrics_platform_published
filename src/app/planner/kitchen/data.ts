@@ -401,13 +401,43 @@ export function getWallModuleLimits(type: WallModuleType): ModuleDimensionLimits
   };
 }
 
+function kitchenModuleCatalogKind(module: KitchenModule): "base" | "wall" {
+  if (BASE_MODULE_CATALOG.some((d) => d.type === module.type)) return "base";
+  return "wall";
+}
+
+/** Wider bounds for admin-catalog modules so W×H×D can be edited freely. */
+function relaxCatalogLimits(
+  lim: ModuleDimensionLimits,
+  module: KitchenModule,
+): ModuleDimensionLimits {
+  if (!module.fromAdminCatalog) return lim;
+  return {
+    minW: Math.min(lim.minW, 15),
+    maxW: Math.max(lim.maxW, 320),
+    minH: Math.min(lim.minH, 40),
+    maxH: Math.max(lim.maxH, 320),
+    minD: Math.min(lim.minD, 20),
+    maxD: Math.max(lim.maxD, 120),
+  };
+}
+
+/** Limits for UI sliders and store clamping — matches wardrobe-style wide admin edits. */
+export function limitsForKitchenModuleEdit(module: KitchenModule): ModuleDimensionLimits {
+  const lim =
+    kitchenModuleCatalogKind(module) === "base"
+      ? getBaseModuleLimits(module.type as BaseModuleType)
+      : getWallModuleLimits(module.type as WallModuleType);
+  return relaxCatalogLimits(lim, module);
+}
+
 /** Resolved body size in cm (clamped to catalog limits). */
 export function getEffectiveBaseDims(m: KitchenModule): { w: number; h: number; d: number } {
   const def = BASE_MODULE_CATALOG.find((x) => x.type === m.type);
   if (!def) {
     return { w: m.width, h: BASE_HEIGHT, d: BASE_DEPTH };
   }
-  const lim = getBaseModuleLimits(def.type as BaseModuleType);
+  const lim = limitsForKitchenModuleEdit(m);
   return {
     w: clamp(m.width, lim.minW, lim.maxW),
     h: clamp(m.heightCm ?? def.defaultHeightCm, lim.minH, lim.maxH),
@@ -420,7 +450,7 @@ export function getEffectiveWallDims(m: KitchenModule): { w: number; h: number; 
   if (!def) {
     return { w: m.width, h: WALL_CABINET_HEIGHT, d: WALL_DEPTH };
   }
-  const lim = getWallModuleLimits(def.type as WallModuleType);
+  const lim = limitsForKitchenModuleEdit(m);
   return {
     w: clamp(m.width, lim.minW, lim.maxW),
     h: clamp(m.heightCm ?? def.defaultHeightCm, lim.minH, lim.maxH),

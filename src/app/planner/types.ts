@@ -246,6 +246,10 @@ export interface PlacedItem {
   height?: number;
   movable?: boolean;  // false = locked in place; defaults to true
   /**
+   * Optional catalog finish for GLB catalog items (`modelUrl`): board/laminate or upholstery swatch id.
+   */
+  gltfFinishMaterialId?: string;
+  /**
    * When set, this piece is a user-designed wardrobe (Bedroom planner).
    * Kept on the instance so edits in Wardrobe planner do not change placed copies.
    */
@@ -301,6 +305,7 @@ export interface PlannerState {
   removeItem: (id: string) => void;
   updateItemPosition: (id: string, x: number, z: number) => void;
   updateItemColor: (id: string, color: string) => void;
+  updateItemGltfFinishMaterial: (id: string, materialId: string | undefined) => void;
   updateItemDimensions: (id: string, dims: { width?: number; depth?: number; height?: number }) => void;
   rotateItem: (id: string, deltaRadians: number) => void;
   toggleItemMovable: (id: string) => void;

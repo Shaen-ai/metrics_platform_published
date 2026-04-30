@@ -544,6 +544,7 @@ function CanvasOverlay() {
         onClose={() => setShowSheets(false)}
         layout={sheetLayout}
         title="Wardrobe sheet layout"
+        portalClassName="wardrobe-sheet-viewer"
         sortPlacements={sortWardrobeSheetPlacements}
         allowManualAdjust
         placementOverrides={sheetPlacementOverrides}

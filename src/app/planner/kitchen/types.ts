@@ -48,6 +48,10 @@ export interface KitchenModule {
   yCm?: number;
   /** True when added from admin catalog (floor placement). Does not receive the global worktop slab. */
   fromAdminCatalog?: boolean;
+  /** Admin catalog row — used to resolve `modelUrl` for 3D GLB in the scene. */
+  adminCatalogModuleId?: string;
+  /** Snapshot when added (optional); live catalog still wins after refresh. */
+  adminCatalogModelUrl?: string | null;
 }
 
 export type CountertopMaterial =
@@ -213,6 +217,12 @@ export interface FloorAlignGuide {
   xCm: number;
 }
 
+export type KitchenSheetPlacementOverride =
+  import("../sheet/placementSheetOverrides").SheetPlacementOverride;
+
+/** Laminate board size override for kitchen sheet packing (same shape as wardrobe). */
+export type KitchenSheetSizeOverrideCm = import("../wardrobe/types").WardrobeSheetSizeOverrideCm;
+
 export interface KitchenState {
   config: KitchenConfig;
   room: RoomSettings;
@@ -222,6 +232,26 @@ export interface KitchenState {
   /** Admin worktops (`type`/`category` worktop); hybrid with built-in presets */
   availableWorktopMaterials: import("./data").KitchenMaterial[];
   availableHandleMaterials: import("./data").KitchenMaterial[];
+
+  /**
+   * Manual sheet layout (drag / rotate on sheet); keyed like wardrobe —
+   * merged in `useKitchenSheetLayout` for 3D UVs + viewer.
+   */
+  sheetPlacementOverrides: Record<string, KitchenSheetPlacementOverride>;
+  sheetManualExtraSheetsByMaterial: Record<string, number>;
+  /** Override laminate sheet W×H (cm) for packing — all sheeted materials. */
+  kitchenSheetSizeOverrideCm: KitchenSheetSizeOverrideCm | null;
+
+  setKitchenSheetPlacementOverrides: (
+    update:
+      | Record<string, KitchenSheetPlacementOverride>
+      | ((
+          prev: Record<string, KitchenSheetPlacementOverride>,
+        ) => Record<string, KitchenSheetPlacementOverride>),
+  ) => void;
+  clearKitchenSheetPlacementOverrides: () => void;
+  bumpKitchenManualExtraSheets: (materialId: string) => void;
+  setKitchenSheetSizeOverride: (value: KitchenSheetSizeOverrideCm | null) => void;
 
   history: KitchenConfig[];
   historyIndex: number;
