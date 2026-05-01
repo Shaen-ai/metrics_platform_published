@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { BrandLogoImage } from "@/components/BrandLogoImage";
+import {
+  prefersFlyAnimationReducedMotion,
+  runFlyToCartAnimation,
+  type FlyToCartTone,
+} from "@/components/catalog/flyToCart";
 import { useStore } from "@/lib/store";
 import { cn, formatPrice } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
@@ -15,6 +20,7 @@ import { catalogItemAllCategoryLabels, catalogItemMatchesCategoryFilter } from "
 import { ArrowLeft, Home, Search, SlidersHorizontal, Package, X, ShoppingCart, Plus } from "lucide-react";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
+import { CatalogCartFlyProvider, useCatalogCartFly } from "./CatalogCartFlyContext";
 
 type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc";
 type LayoutMode = "grid" | "list" | "masonry" | "magazine" | "reels" | "gallery";
@@ -26,25 +32,44 @@ function AddToCartPlusButton({
   item,
   className,
   compact,
+  flyTone = "primary",
 }: {
   item: CatalogItem;
   className?: string;
   /** Tighter padding for dense overlays (reels, gallery). */
   compact?: boolean;
+  /** Magazine hero uses a light chip; fly animation matches. */
+  flyTone?: FlyToCartTone;
 }) {
   const addToCart = useStore((s) => s.addToCart);
+  const { cartIconTargetRef, bumpCartFab } = useCatalogCartFly();
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   return (
     <button
+      ref={btnRef}
       type="button"
       onClick={(e) => {
         e.stopPropagation();
+        const startRect = btnRef.current?.getBoundingClientRect();
         addToCart(item);
+        if (!startRect || prefersFlyAnimationReducedMotion()) return;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const endRect = cartIconTargetRef.current?.getBoundingClientRect() ?? null;
+            runFlyToCartAnimation({
+              startRect,
+              endRect,
+              tone: flyTone,
+              onComplete: bumpCartFab,
+            });
+          });
+        });
       }}
       className={cn(
         compact
-          ? "shrink-0 p-1.5 rounded-lg bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm"
-          : "shrink-0 p-2 rounded-xl bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm",
+          ? "shrink-0 cursor-pointer p-1.5 rounded-lg bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm"
+          : "shrink-0 cursor-pointer p-2 rounded-xl bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm",
         className,
       )}
       title="Add to cart"
@@ -285,6 +310,7 @@ function MagazineHero({ item }: { item: CatalogItem }) {
         <div className="flex items-center gap-2 shrink-0 pointer-events-auto">
           <AddToCartPlusButton
             item={item}
+            flyTone="light"
             className="bg-white text-[var(--primary)] hover:brightness-100 ring-2 ring-white/30"
           />
           <span
@@ -455,15 +481,38 @@ function LayoutSwitcher({
 function FloatingCartButton() {
   const cart = useStore((s) => s.cart);
   const count = cart.reduce((sum, c) => sum + c.quantity, 0);
-  if (count === 0) return null;
+  const { cartIconTargetRef, bumpKey } = useCatalogCartFly();
+  const [isBumping, setIsBumping] = useState(false);
+
+  useEffect(() => {
+    if (bumpKey === 0) return;
+    let offTimer: number | undefined;
+    const frame = requestAnimationFrame(() => {
+      setIsBumping(true);
+      offTimer = window.setTimeout(() => setIsBumping(false), 380);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (offTimer !== undefined) window.clearTimeout(offTimer);
+    };
+  }, [bumpKey]);
+
   return (
     <Link
       href="/checkout"
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3 rounded-full
-                 bg-[var(--primary)] text-white font-semibold shadow-xl shadow-[var(--primary)]/30
-                 hover:brightness-110 transition-all"
+      aria-hidden={count === 0 ? true : undefined}
+      tabIndex={count === 0 ? -1 : undefined}
+      className={cn(
+        "fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3 rounded-full",
+        "bg-[var(--primary)] text-white font-semibold shadow-xl shadow-[var(--primary)]/30",
+        "hover:brightness-110 transition-transform duration-300 ease-out",
+        count === 0 && "opacity-0 pointer-events-none select-none",
+        isBumping && "scale-[1.12]",
+      )}
     >
-      <ShoppingCart className="w-5 h-5" />
+      <span ref={cartIconTargetRef} className="inline-flex shrink-0">
+        <ShoppingCart className="w-5 h-5" />
+      </span>
       <span>{count}</span>
     </Link>
   );
@@ -675,6 +724,7 @@ export default function CatalogPage() {
   }
 
   return (
+    <CatalogCartFlyProvider>
     <div className={`min-h-screen ${design.shellClass}`} style={getDesignVariables(admin)}>
       <header className={`sticky top-0 z-50 ${design.headerClass}`}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -779,5 +829,6 @@ export default function CatalogPage() {
       </main>
       <FloatingCartButton />
     </div>
+    </CatalogCartFlyProvider>
   );
 }

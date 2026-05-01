@@ -68,7 +68,8 @@ class ApiClient {
   async submitOrder(slug: string, order: {
     customer_name: string;
     customer_email: string;
-    customer_phone?: string;
+    customer_phone: string;
+    customer_address: string;
     type: string;
     total_price: number;
     notes?: string;

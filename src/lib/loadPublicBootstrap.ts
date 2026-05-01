@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { publicApiUrl } from "@/lib/publicEnv";
 import {
@@ -8,11 +9,16 @@ import {
 import type { Admin } from "@/lib/types";
 import { getPublishedAdminSlugFromHost } from "@/lib/tenant";
 
-/** Fetches tenant + language hint for SSR (brand name + correct translations on first paint). */
-export async function loadPublicBootstrap(): Promise<{
+/**
+ * Fetches tenant + language hint for SSR (brand name, theme on `<body>`, translations).
+ * `cache: "no-store"` avoids a stale `publicSiteLayout` / theme for up to 60s after changes
+ * (orange Tunzone flash then correct colors). Request-scoped `cache()` dedupes the fetch when
+ * `generateMetadata` and `RootLayout` both call this in the same render.
+ */
+export const loadPublicBootstrap = cache(async (): Promise<{
   admin: Admin | null;
   initialLang: LanguageCode;
-}> {
+}> => {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   const slug = getPublishedAdminSlugFromHost(host);
@@ -20,7 +26,7 @@ export async function loadPublicBootstrap(): Promise<{
   let admin: Admin | null = null;
   try {
     const res = await fetch(`${publicApiUrl}/public/${encodeURIComponent(slug)}`, {
-      next: { revalidate: 60 },
+      cache: "no-store",
       headers: { Accept: "application/json" },
     });
     if (res.ok) {
@@ -41,4 +47,4 @@ export async function loadPublicBootstrap(): Promise<{
   }
 
   return { admin, initialLang };
-}
+});

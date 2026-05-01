@@ -134,6 +134,7 @@ export default function CheckoutPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,40 +146,68 @@ export default function CheckoutPage() {
   const total = getCartTotal();
   const currency = admin?.currency || "USD";
 
-  const handlePayWithPaypal = async () => {
+  const validateCheckoutFields = (): boolean => {
     if (!customerName.trim() || !customerEmail.trim()) {
       setError("Please fill in your name and email.");
-      return;
+      return false;
+    }
+    if (!customerPhone.trim()) {
+      setError("Please fill in your phone number.");
+      return false;
+    }
+    if (!customerAddress.trim()) {
+      setError("Please fill in your delivery address.");
+      return false;
     }
     if (cart.length === 0) {
       setError("Your cart is empty.");
+      return false;
+    }
+    return true;
+  };
+
+  const submitOrderPayload = async () => {
+    const { type, items } = buildOrderPayload(cart, admin);
+    const orderData = {
+      customer_name: customerName.trim(),
+      customer_email: customerEmail.trim(),
+      customer_phone: customerPhone.trim(),
+      customer_address: customerAddress.trim(),
+      type,
+      total_price: total,
+      notes: notes.trim() || undefined,
+      items,
+    };
+    const res = await api.submitOrder(admin?.slug || "demo", orderData);
+    return (res.data as { id: string });
+  };
+
+  const handlePlaceOrder = async () => {
+    setError(null);
+    if (!validateCheckoutFields()) return;
+
+    setSubmitting(true);
+    try {
+      const order = await submitOrderPayload();
+      clearCart();
+      router.push(`/checkout/success?order_id=${order.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create order");
+      setSubmitting(false);
+    }
+  };
+
+  const handlePayWithPaypal = async () => {
+    setError(null);
+    if (!validateCheckoutFields()) return;
+    if (!admin?.paypalEmail) {
+      setError("PayPal checkout is not available for this store.");
       return;
     }
 
     setSubmitting(true);
-    setError(null);
-
     try {
-      const { type, items } = buildOrderPayload(cart, admin);
-      const orderData = {
-        customer_name: customerName.trim(),
-        customer_email: customerEmail.trim(),
-        customer_phone: customerPhone.trim() || undefined,
-        type,
-        total_price: total,
-        notes: notes.trim() || undefined,
-        items,
-      };
-
-      const res = await api.submitOrder(admin?.slug || "demo", orderData);
-      const order = (res.data as any);
-
-      if (!admin?.paypalEmail) {
-        clearCart();
-        router.push(`/checkout/success?order_id=${order.id}`);
-        return;
-      }
-
+      const order = await submitOrderPayload();
       const itemName = describeCartForPaypal(cart);
 
       const paypalParams = new URLSearchParams({
@@ -261,14 +290,25 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Phone</label>
+                  <label className="block text-sm font-medium mb-1.5">Phone *</label>
                   <input
                     type="tel"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl bg-[var(--muted)] border border-[var(--border)] text-sm
                                focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent"
-                    placeholder="+1 234 567 8900"
+                    placeholder="+374 XX XXX XXX"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Delivery address *</label>
+                  <textarea
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-xl bg-[var(--muted)] border border-[var(--border)] text-sm
+                               focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent resize-none"
+                    placeholder="Street, building, apartment, city"
                   />
                 </div>
                 <div>
@@ -536,23 +576,40 @@ export default function CheckoutPage() {
 
               <button
                 type="button"
-                onClick={handlePayWithPaypal}
+                onClick={handlePlaceOrder}
                 disabled={submitting}
-                className="w-full py-3.5 rounded-xl bg-[#0070ba] hover:bg-[#005ea6] text-white font-semibold
+                className="w-full py-3.5 rounded-xl bg-[var(--primary)] hover:brightness-110 text-white font-semibold
                            flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
               >
                 {submitting ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    <CreditCard className="w-5 h-5" />
-                    Pay with PayPal
+                    <Package className="w-5 h-5" />
+                    Place order
                   </>
                 )}
               </button>
               <p className="text-xs text-center text-[var(--muted-foreground)] mt-3">
-                You will be redirected to PayPal to complete your payment.
+                We will email the store with your details. They will contact you to confirm delivery and payment.
               </p>
+              {admin?.paypalEmail ? (
+                <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-2">
+                  <button
+                    type="button"
+                    onClick={handlePayWithPaypal}
+                    disabled={submitting}
+                    className="w-full py-3 rounded-xl border-2 border-[var(--border)] bg-white text-[var(--foreground)] font-medium
+                               flex items-center justify-center gap-2 transition-colors hover:bg-[var(--muted)] disabled:opacity-50"
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    Pay with PayPal instead
+                  </button>
+                  <p className="text-xs text-center text-[var(--muted-foreground)]">
+                    You will be redirected to PayPal after your order is created.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
