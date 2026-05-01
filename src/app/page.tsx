@@ -12,15 +12,13 @@ import { getDesignVariables, getSiteDesign } from "./site-designs/registry";
 import {
   ArrowRight,
   Play,
-  Star,
   LayoutGrid,
   Palette,
   Box,
   Eye,
   Zap,
   Shield,
-  BarChart3,
-  Quote,
+  Sparkles,
   Package,
   Boxes,
   PenTool,
@@ -98,7 +96,7 @@ export default function HomePage() {
                 {copy("heroSubtitle", t("hero.subtitle"))}
               </p>
 
-              <div className="flex flex-wrap items-center gap-4 mb-12">
+              <div className="flex flex-wrap items-center gap-4">
                 <Link
                   href="/catalog"
                   className={`inline-flex items-center gap-2 font-semibold px-8 py-3.5 hover:brightness-110 transition-all shadow-md hover:shadow-lg text-base ${design.buttonClass}`}
@@ -115,29 +113,6 @@ export default function HomePage() {
                   </span>
                   {copy("secondaryCta", t("hero.tryPlanners"))}
                 </Link>
-              </div>
-
-              <div className="flex items-center gap-6">
-                <div className="flex -space-x-2">
-                  {["A", "B", "C", "D"].map((letter) => (
-                    <div
-                      key={letter}
-                      className="w-9 h-9 rounded-full border-2 border-white bg-[var(--muted)] flex items-center justify-center text-xs font-semibold text-[var(--muted-foreground)]"
-                    >
-                      {letter}
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <div className="flex gap-0.5 mb-0.5">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Star key={s} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-sm text-[var(--muted-foreground)]">
-                    {t("hero.trustedBy")} <strong className="text-[var(--foreground)]">2,400+</strong> {t("hero.manufacturers")}
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -214,7 +189,7 @@ export default function HomePage() {
               { icon: Palette, titleKey: "features.materialSelector", descKey: "features.materialSelectorDesc" },
               { icon: Zap, titleKey: "features.modularBuilder", descKey: "features.modularBuilderDesc" },
               { icon: Shield, titleKey: "features.orderManagement", descKey: "features.orderManagementDesc" },
-              { icon: BarChart3, titleKey: "features.analyticsDashboard", descKey: "features.analyticsDashboardDesc" },
+              { icon: Sparkles, titleKey: "features.analyticsDashboard", descKey: "features.analyticsDashboardDesc" },
             ].map((feat, i) => (
               <div key={i} className={`p-8 hover:shadow-lg transition-all duration-300 group ${design.cardClass}`}>
                 <div className="w-12 h-12 bg-[var(--secondary)] rounded-xl flex items-center justify-center mb-5 group-hover:bg-[var(--primary)]/10 transition-colors">
@@ -257,41 +232,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ─── Testimonials ─── */}
-      <section id="testimonials" className="py-24 bg-white/70 border-y border-[var(--border)]">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <p className="text-sm font-semibold text-[var(--primary)] mb-3 tracking-wide uppercase">{t("testimonials.label")}</p>
-            <h2 className="text-4xl lg:text-5xl mb-4">{t("testimonials.title")}</h2>
-            <p className="text-lg text-[var(--muted-foreground)] max-w-2xl mx-auto">
-              {t("testimonials.subtitle")}
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { quoteKey: "testimonials.quote1", nameKey: "testimonials.name1", roleKey: "testimonials.role1", initials: "SJ" },
-              { quoteKey: "testimonials.quote2", nameKey: "testimonials.name2", roleKey: "testimonials.role2", initials: "MC" },
-              { quoteKey: "testimonials.quote3", nameKey: "testimonials.name3", roleKey: "testimonials.role3", initials: "EW" },
-            ].map((item, i) => (
-              <div key={i} className={`p-8 ${design.cardClass}`}>
-                <Quote className="w-8 h-8 text-[var(--primary)]/30 mb-4" />
-                <p className="text-[var(--foreground)] mb-6 leading-relaxed">&ldquo;{t(item.quoteKey)}&rdquo;</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[var(--primary)]/10 rounded-full flex items-center justify-center text-sm font-semibold text-[var(--primary)]">
-                    {item.initials}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">{t(item.nameKey)}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">{t(item.roleKey)}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ─── CTA Banner ─── */}
       <section className="py-24">
         <div className="max-w-4xl mx-auto px-6 text-center">
@@ -318,27 +258,24 @@ export default function HomePage() {
       </section>
 
       {/* ─── Footer ─── */}
-      <footer className={`${design.footerClass} py-16`}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-4 gap-10 mb-12">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
+      <footer className={`${design.footerClass} py-6 sm:py-10 md:py-14 lg:py-16`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-5 mb-6 sm:gap-x-8 md:grid-cols-4 md:gap-8 md:gap-y-10 lg:gap-10 md:mb-10 lg:mb-12">
+            <div className="col-span-2 md:col-span-1">
+              <div className="flex items-center gap-2">
                 <BrandLogoImage
                   admin={admin}
                   brandName={brandName}
                   width={36}
                   height={36}
-                  className="h-9 w-9 rounded-xl object-contain"
+                  className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg sm:rounded-xl object-contain"
                 />
-                <span className="text-lg font-semibold">{brandName}</span>
+                <span className="text-base font-semibold sm:text-lg">{brandName}</span>
               </div>
-              <p className="text-sm text-gray-400 leading-relaxed">
-                {copy("footerTagline", t("footer.tagline"))}
-              </p>
             </div>
             <div>
-              <h4 className="font-semibold text-sm mb-4">{t("footer.explore")}</h4>
-              <ul className="space-y-2 text-sm text-gray-400">
+              <h4 className="font-semibold text-xs mb-2 sm:text-sm md:mb-4">{t("footer.explore")}</h4>
+              <ul className="space-y-1 text-xs text-gray-400 sm:space-y-2 sm:text-sm">
                 <li><Link href="/catalog" className="hover:text-white transition-colors">{t("nav.catalog")}</Link></li>
                 <li><Link href="/planners" className="hover:text-white transition-colors">{t("footer.roomPlanners")}</Link></li>
                 <li><Link href="/materials" className="hover:text-white transition-colors">{t("footer.materials")}</Link></li>
@@ -346,8 +283,8 @@ export default function HomePage() {
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold text-sm mb-4">{t("footer.company")}</h4>
-              <ul className="space-y-2 text-sm text-gray-400">
+              <h4 className="font-semibold text-xs mb-2 sm:text-sm md:mb-4">{t("footer.company")}</h4>
+              <ul className="space-y-1 text-xs text-gray-400 sm:space-y-2 sm:text-sm">
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.about")}</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.blog")}</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.careers")}</a></li>
@@ -361,17 +298,17 @@ export default function HomePage() {
                 </li>
               </ul>
             </div>
-            <div>
-              <h4 className="font-semibold text-sm mb-4">{t("footer.legal")}</h4>
-              <ul className="space-y-2 text-sm text-gray-400">
+            <div className="col-span-2 md:col-span-1">
+              <h4 className="font-semibold text-xs mb-2 sm:text-sm md:mb-4">{t("footer.legal")}</h4>
+              <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400 sm:flex-col sm:gap-x-0 sm:space-y-2 sm:text-sm">
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.privacy")}</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.terms")}</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">{t("footer.cookies")}</a></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 pt-8 text-center">
-            <p className="text-sm text-gray-500">{t("footer.copyright")}</p>
+          <div className="border-t border-gray-800 pt-4 text-center md:pt-8">
+            <p className="text-xs text-gray-500 sm:text-sm">{t("footer.copyright")}</p>
           </div>
         </div>
       </footer>

@@ -172,3 +172,56 @@ export function getDesignVariables(admin?: Admin | null): CSSProperties {
     ...(admin?.publicSiteTheme?.textColor ? { "--site-foreground": admin.publicSiteTheme.textColor } : {}),
   } as CSSProperties;
 }
+
+function relativeLuminanceFromHex(hex: string): number | null {
+  const raw = hex.trim().replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(raw)) return null;
+  const n = parseInt(raw, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/**
+ * Maps storefront `--site-*` tokens to global semantic vars (`--primary`, `--background`, …)
+ * used across the app so the first paint matches the tenant theme (no orange Tunzone flash).
+ */
+export function getPublishedThemeBodyStyle(admin?: Admin | null): CSSProperties {
+  const site = getDesignVariables(admin) as Record<string, string | number | undefined>;
+  const background = String(site["--site-background"] ?? "#FFF8F0");
+  const foreground = String(site["--site-foreground"] ?? "#1A1A1A");
+
+  const lum = relativeLuminanceFromHex(background);
+  const dark = lum !== null && lum < 0.42;
+
+  return {
+    ...site,
+    "--primary": String(site["--site-primary"] ?? "#E8772E"),
+    "--primary-foreground": "#ffffff",
+    "--ring": String(site["--site-primary"] ?? "#E8772E"),
+    "--foreground": foreground,
+    "--background": background,
+    "--secondary": "color-mix(in srgb, var(--site-primary) 14%, var(--site-background))",
+    "--secondary-foreground": foreground,
+    "--muted": "color-mix(in srgb, var(--site-primary) 10%, var(--site-background))",
+    "--muted-foreground": dark ? "#A3A3A3" : "#6B7280",
+    "--accent": "color-mix(in srgb, var(--site-accent) 18%, var(--site-background))",
+    "--accent-foreground": foreground,
+    "--card": dark
+      ? "color-mix(in srgb, var(--site-foreground) 10%, var(--site-background))"
+      : "#ffffff",
+    "--card-foreground": foreground,
+    "--border": "color-mix(in srgb, var(--site-foreground) 16%, var(--site-background))",
+    "--input": "color-mix(in srgb, var(--site-foreground) 16%, var(--site-background))",
+  } as CSSProperties;
+}
+
+/** Apply CSS custom properties from a React style object (e.g. body sync after admin loads). */
+export function applyCssVariablesToElement(el: HTMLElement, vars: CSSProperties): void {
+  for (const [key, rawVal] of Object.entries(vars)) {
+    if (rawVal === undefined || rawVal === null) continue;
+    const val = typeof rawVal === "number" ? `${rawVal}px` : String(rawVal);
+    el.style.setProperty(key, val);
+  }
+}

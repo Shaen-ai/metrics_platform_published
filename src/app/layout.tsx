@@ -5,6 +5,8 @@ import { loadPublicBootstrap } from "@/lib/loadPublicBootstrap";
 import { getStorefrontLogoSrc } from "@/lib/brandLogo";
 import { PublishedTenantProvider } from "@/contexts/PublishedTenantProvider";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
+import { PublishedBodyTheme } from "@/components/PublishedBodyTheme";
+import { getPublishedThemeBodyStyle } from "@/app/site-designs/registry";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -39,9 +41,14 @@ export default async function RootLayout({
 
   return (
     <html lang={initialLang} className={inter.variable} suppressHydrationWarning>
-      <body className="antialiased" suppressHydrationWarning>
+      <body
+        className="antialiased"
+        style={getPublishedThemeBodyStyle(admin)}
+        suppressHydrationWarning
+      >
         <GoogleAnalytics />
         <PublishedTenantProvider bootstrapAdmin={admin} initialLang={initialLang}>
+          <PublishedBodyTheme />
           {children}
         </PublishedTenantProvider>
       </body>

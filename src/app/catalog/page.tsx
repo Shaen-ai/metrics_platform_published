@@ -6,20 +6,54 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { BrandLogoImage } from "@/components/BrandLogoImage";
 import { useStore } from "@/lib/store";
-import { formatPrice } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
 import { getCatalog3dPresentation } from "@/lib/catalog3d";
 import CatalogModelViewer from "@/components/CatalogModelViewer";
+import type { CatalogListingFraming } from "@/lib/modelViewerVerticalCenter";
 import { catalogItemAllCategoryLabels, catalogItemMatchesCategoryFilter } from "@/lib/catalogItemCategories";
 import { ArrowLeft, Home, Search, SlidersHorizontal, Package, X, ShoppingCart, Plus } from "lucide-react";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
 
 type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc";
-type LayoutMode = "grid" | "list" | "masonry" | "magazine" | "showcase" | "reels" | "commerce" | "gallery";
+type LayoutMode = "grid" | "list" | "masonry" | "magazine" | "reels" | "gallery";
 type LayoutOption = { id: LayoutMode; label: string; icon: React.ReactNode };
 
 const MASONRY_ASPECTS = ["aspect-[3/4]", "aspect-square", "aspect-[4/3]"] as const;
+
+function AddToCartPlusButton({
+  item,
+  className,
+  compact,
+}: {
+  item: CatalogItem;
+  className?: string;
+  /** Tighter padding for dense overlays (reels, gallery). */
+  compact?: boolean;
+}) {
+  const addToCart = useStore((s) => s.addToCart);
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        addToCart(item);
+      }}
+      className={cn(
+        compact
+          ? "shrink-0 p-1.5 rounded-lg bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm"
+          : "shrink-0 p-2 rounded-xl bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm",
+        className,
+      )}
+      title="Add to cart"
+      aria-label={`Add ${item.name} to cart`}
+    >
+      <Plus className={compact ? "w-3.5 h-3.5" : "w-4 h-4"} />
+    </button>
+  );
+}
 
 // ─── Drag-aware navigation hook ─────────────────────────────────────────────
 
@@ -56,10 +90,12 @@ function ItemMedia({
   item,
   className,
   onOpen,
+  listingFraming = "compact",
 }: {
   item: CatalogItem;
   className?: string;
   onOpen: () => void;
+  listingFraming?: CatalogListingFraming;
 }) {
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const dragged = useRef(false);
@@ -93,7 +129,12 @@ function ItemMedia({
         onPointerUp={onPointerUp}
         onClick={(e) => e.stopPropagation()}
       >
-        <CatalogModelViewer src={item.modelUrl} alt={item.name} />
+        <CatalogModelViewer
+          src={item.modelUrl}
+          alt={item.name}
+          listingFraming={listingFraming}
+          scrollFriendly
+        />
       </div>
     );
   }
@@ -127,9 +168,18 @@ function ItemMedia({
 
 // ─── Grid / Masonry / Magazine-sub card ─────────────────────────────────────
 
-function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: CatalogItem; index: number; aspectClass?: string }) {
+function GridCard({
+  item,
+  index,
+  aspectClass = "aspect-[4/3]",
+  listingFraming = "card",
+}: {
+  item: CatalogItem;
+  index: number;
+  aspectClass?: string;
+  listingFraming?: CatalogListingFraming;
+}) {
   const { nav } = useDragNav(item.id);
-  const addToCart = useStore((s) => s.addToCart);
 
   return (
     <div
@@ -139,7 +189,7 @@ function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: Catalog
       onClick={nav}
     >
       <div className={`${aspectClass} relative bg-[var(--muted)] overflow-hidden`}>
-        <ItemMedia item={item} onOpen={nav} />
+        <ItemMedia item={item} onOpen={nav} listingFraming={listingFraming} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent
                         opacity-0 group-hover:opacity-100 transition-opacity duration-300
                         pointer-events-none flex items-end justify-center pb-5">
@@ -161,13 +211,7 @@ function GridCard({ item, index, aspectClass = "aspect-[4/3]" }: { item: Catalog
         {item.model && <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{item.model}</p>}
         <div className="flex items-center justify-between mt-2.5">
           <p className="text-lg font-bold text-[var(--primary)]">{formatPrice(item.price, item.currency)}</p>
-          <button
-            onClick={(e) => { e.stopPropagation(); addToCart(item); }}
-            className="p-2 rounded-xl bg-[var(--primary)] text-white hover:brightness-110 transition-all shadow-sm"
-            title="Add to cart"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+          <AddToCartPlusButton item={item} />
         </div>
       </div>
     </div>
@@ -186,7 +230,7 @@ function ShowcaseCard({ item }: { item: CatalogItem }) {
       onClick={nav}
     >
       <div className="relative shrink-0 overflow-hidden bg-[var(--muted)]" style={{ width: "42%", minHeight: 148 }}>
-        <ItemMedia item={item} onOpen={nav} />
+        <ItemMedia item={item} onOpen={nav} listingFraming="wideRow" />
       </div>
       <div className="flex-1 min-w-0 p-4 flex flex-col justify-between">
         <div>
@@ -198,11 +242,9 @@ function ShowcaseCard({ item }: { item: CatalogItem }) {
             <p className="text-xs text-[var(--muted-foreground)] leading-relaxed line-clamp-2 mb-2">{item.description}</p>
           )}
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <p className="text-lg font-bold text-[var(--primary)]">{formatPrice(item.price, item.currency)}</p>
-          {item.deliveryDays > 0 && (
-            <span className="text-xs text-[var(--muted-foreground)]">{item.deliveryDays}d delivery</span>
-          )}
+          <AddToCartPlusButton item={item} />
         </div>
       </div>
     </div>
@@ -222,7 +264,7 @@ function MagazineHero({ item }: { item: CatalogItem }) {
       onClick={nav}
     >
       <div className="absolute inset-0 bg-[var(--muted)]">
-        <ItemMedia item={item} onOpen={nav} />
+        <ItemMedia item={item} onOpen={nav} listingFraming="card" />
       </div>
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)" }} />
@@ -240,13 +282,19 @@ function MagazineHero({ item }: { item: CatalogItem }) {
           <h3 className="font-bold text-white text-lg leading-tight line-clamp-2 mb-0.5">{item.name}</h3>
           <p className="text-white font-semibold text-sm" style={{ opacity: 0.9 }}>{formatPrice(item.price, item.currency)}</p>
         </div>
-        <span
-          className="shrink-0 px-5 py-2 bg-white/90 backdrop-blur-sm rounded-full text-sm font-medium shadow-lg
-                     pointer-events-auto cursor-pointer hover:bg-white transition-colors"
-          onClick={(e) => { e.stopPropagation(); nav(); }}
-        >
-          View Details
-        </span>
+        <div className="flex items-center gap-2 shrink-0 pointer-events-auto">
+          <AddToCartPlusButton
+            item={item}
+            className="bg-white text-[var(--primary)] hover:brightness-100 ring-2 ring-white/30"
+          />
+          <span
+            className="shrink-0 px-5 py-2 bg-white/90 backdrop-blur-sm rounded-full text-sm font-medium shadow-lg
+                       cursor-pointer hover:bg-white transition-colors"
+            onClick={(e) => { e.stopPropagation(); nav(); }}
+          >
+            View Details
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -265,21 +313,24 @@ function ReelCard({ item }: { item: CatalogItem }) {
       onClick={nav}
     >
       <div className="absolute inset-0 bg-[var(--muted)]">
-        <ItemMedia item={item} onOpen={nav} />
+        <ItemMedia item={item} onOpen={nav} listingFraming="compact" />
       </div>
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0.08) 75%, transparent 100%)" }} />
-      <div className="absolute bottom-0 left-0 right-0 p-3">
-        <span className="inline-block text-[10px] font-medium text-white/80 bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full mb-2">
-          {item.category}
-        </span>
-        <h3 className="font-bold text-white text-xs leading-snug line-clamp-2 mb-1"
-          style={{ textShadow: "0 1px 4px rgba(0,0,0,0.6)" }}>
-          {item.name}
-        </h3>
-        <p className="font-semibold text-white text-sm" style={{ opacity: 0.92 }}>
-          {formatPrice(item.price, item.currency)}
-        </p>
+      <div className="absolute bottom-0 left-0 right-0 p-3 flex items-end justify-between gap-2">
+        <div className="min-w-0 pr-2">
+          <span className="inline-block text-[10px] font-medium text-white/80 bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full mb-2">
+            {item.category}
+          </span>
+          <h3 className="font-bold text-white text-xs leading-snug line-clamp-2 mb-1"
+            style={{ textShadow: "0 1px 4px rgba(0,0,0,0.6)" }}>
+            {item.name}
+          </h3>
+          <p className="font-semibold text-white text-sm" style={{ opacity: 0.92 }}>
+            {formatPrice(item.price, item.currency)}
+          </p>
+        </div>
+        <AddToCartPlusButton item={item} compact className="pointer-events-auto self-end" />
       </div>
     </div>
   );
@@ -296,7 +347,7 @@ function GalleryCell({ item }: { item: CatalogItem }) {
       style={{ aspectRatio: "1/1" }}
       onClick={nav}
     >
-      <ItemMedia item={item} onOpen={nav} />
+      <ItemMedia item={item} onOpen={nav} listingFraming="compact" />
       <div className="absolute inset-0 flex flex-col items-center justify-end pb-3 px-2
                       opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none"
         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)" }}>
@@ -307,13 +358,16 @@ function GalleryCell({ item }: { item: CatalogItem }) {
         <p className="text-white font-bold text-xs mb-2 pointer-events-none" style={{ opacity: 0.95 }}>
           {formatPrice(item.price, item.currency)}
         </p>
-        <span
-          className="px-4 py-1.5 bg-white/90 backdrop-blur-sm rounded-full text-xs font-medium shadow-lg
-                     pointer-events-auto cursor-pointer hover:bg-white transition-colors"
-          onClick={(e) => { e.stopPropagation(); nav(); }}
-        >
-          View
-        </span>
+        <div className="flex items-center justify-center gap-2 flex-wrap pointer-events-auto">
+          <AddToCartPlusButton item={item} compact />
+          <span
+            className="px-4 py-1.5 bg-white/90 backdrop-blur-sm rounded-full text-xs font-medium shadow-lg
+                       cursor-pointer hover:bg-white transition-colors"
+            onClick={(e) => { e.stopPropagation(); nav(); }}
+          >
+            View
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -339,16 +393,8 @@ const LAYOUT_OPTIONS: LayoutOption[] = [
     icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="1" y="8" width="3.5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4"/><rect x="5.5" y="8" width="3.5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4"/><rect x="10" y="8" width="3" height="5" rx="1" stroke="currentColor" strokeWidth="1.4"/></svg>,
   },
   {
-    id: "showcase", label: "Showcase",
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5.5" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><path d="M8 2.5h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M8 4.5h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><rect x="1" y="8" width="5.5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><path d="M8 9.5h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M8 11.5h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
-  },
-  {
     id: "reels", label: "Reels",
     icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5" height="12" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="8" y="1" width="5" height="12" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><path d="M3 7l2-1.2v2.4L3 7z" fill="currentColor"/></svg>,
-  },
-  {
-    id: "commerce", label: "Commerce",
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="4" height="4" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><path d="M7 3.5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M7 5.5h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><rect x="1" y="8" width="4" height="4" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><path d="M7 9.5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M7 11.5h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
   },
   {
     id: "gallery", label: "Gallery",
@@ -557,7 +603,12 @@ export default function CatalogPage() {
           <div className="columns-2 sm:columns-3 gap-4 pb-12">
             {items.map((item, i) => (
               <div key={item.id} className="break-inside-avoid mb-4">
-                <GridCard item={item} index={i} aspectClass={MASONRY_ASPECTS[i % MASONRY_ASPECTS.length]} />
+                <GridCard
+                  item={item}
+                  index={i}
+                  aspectClass={MASONRY_ASPECTS[i % MASONRY_ASPECTS.length]}
+                  listingFraming="compact"
+                />
               </div>
             ))}
           </div>
@@ -577,9 +628,7 @@ export default function CatalogPage() {
           </div>
         );
 
-      case "showcase":
       case "list":
-      case "commerce":
         return (
           <div className="flex flex-col gap-4 pb-12">
             {items.map((item) => (

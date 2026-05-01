@@ -76,10 +76,13 @@ function ThumbnailModel({ item }: { item: PlannerCatalogItem }) {
     const center = box.getCenter(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     const scale = maxDim > 0 ? 1.15 / maxDim : 1;
-    return { center, scale };
+    return { center, scale, height: size.y };
   }, [scene]);
 
   if (!scene || !fit) return null;
+
+  /** Slight raise so catalog thumbnails match card framing across aspect ratios */
+  const yRaise = Math.max(fit.height * fit.scale * 0.065, 0.012);
 
   return (
     <group rotation={[0, -Math.PI / 5, 0]}>
@@ -87,7 +90,7 @@ function ThumbnailModel({ item }: { item: PlannerCatalogItem }) {
         object={scene}
         position={[
           -fit.center.x * fit.scale,
-          -fit.center.y * fit.scale,
+          -fit.center.y * fit.scale + yRaise,
           -fit.center.z * fit.scale,
         ]}
         scale={fit.scale}
