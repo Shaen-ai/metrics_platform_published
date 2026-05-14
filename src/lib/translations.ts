@@ -62,6 +62,7 @@ const plannerKeyMap: Record<string, string> = {
   "dining-room": "diningRoom",
   "office": "office",
   "children": "children",
+  "outdoor": "outdoor",
   "hallway": "hallway",
 };
 
@@ -195,9 +196,15 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     "planner.children.name": "Children's Room Planner",
     "planner.children.short": "Kids",
     "planner.children.desc": "Create a fun and functional room for children with beds, play areas and clever storage.",
+    "planner.outdoor.name": "Outdoor Planner",
+    "planner.outdoor.short": "Outdoor",
+    "planner.outdoor.desc": "Lay out your patio or deck with outdoor furniture. Configure cushions and upholstery on each piece in 3D.",
     "planner.hallway.name": "Hallway Planner",
     "planner.hallway.short": "Hallway",
     "planner.hallway.desc": "Organize your entryway with coat racks, shoe storage, benches and clever lighting.",
+    "planner.interior-design.name": "AI Interior Designer",
+    "planner.interior-design.short": "AI Design",
+    "planner.interior-design.desc": "Upload a room photo and let AI redesign it in place. Describe the design you want—colors, style, materials, or any specific requirements—then refine in chat.",
 
     // Catalog page
     "catalog.title": "Catalog",
@@ -351,9 +358,15 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     "planner.children.name": "Детская комната",
     "planner.children.short": "Детская",
     "planner.children.desc": "Весёлая и функциональная комната: кровати, игровые зоны и умное хранение.",
+    "planner.outdoor.name": "Планировщик террасы",
+    "planner.outdoor.short": "Улица",
+    "planner.outdoor.desc": "Расставьте садовую мебель на террасе или патио. Настраивайте подушки и обивку каждого изделия в 3D.",
     "planner.hallway.name": "Планировщик прихожей",
     "planner.hallway.short": "Прихожая",
     "planner.hallway.desc": "Организуйте прихожую: вешалки, полки для обуви, банкетки и освещение.",
+    "planner.interior-design.name": "AI Дизайнер интерьера",
+    "planner.interior-design.short": "AI Дизайн",
+    "planner.interior-design.desc": "Загрузите фото комнаты — AI переоформит интерьер на месте. Опишите желаемый дизайн: цвета, стиль, материалы или особые пожелания — затем доработайте в чате.",
 
     // Catalog page
     "catalog.title": "Каталог",

@@ -15,10 +15,16 @@ import {
 } from "lucide-react";
 import { useWardrobeStore } from "./store";
 import { calculatePrice } from "./data";
+import {
+  wardrobeLayoutLegCountForConfig,
+  wardrobeLayoutLegWidthsFromConfig,
+} from "./wardrobeSpaceLayout";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 import { PENDING_BEDROOM_WARDROBE_ID_KEY } from "./plannerWardrobeCatalog";
+import SendPlannerDesignToAdminDialog from "../components/SendPlannerDesignToAdminDialog";
+import { buildWardrobeEmailDesign } from "../utils/plannerDesignSnapshots";
 
 export default function HeaderToolbar() {
   const router = useRouter();
@@ -34,14 +40,20 @@ export default function HeaderToolbar() {
   const availableDoorMaterials = useWardrobeStore((s) => s.availableDoorMaterials);
   const availableSlidingMechanisms = useWardrobeStore((s) => s.availableSlidingMechanisms);
   const availableHandleMaterials = useWardrobeStore((s) => s.availableHandleMaterials);
+  const room = useWardrobeStore((s) => s.room);
+  const wardrobeSheetSizeOverrideCm = useWardrobeStore((s) => s.wardrobeSheetSizeOverrideCm);
 
   const allMats = useMemo(
     () => [...availableMaterials, ...availableDoorMaterials],
     [availableMaterials, availableDoorMaterials],
   );
   const price = useMemo(
-    () => calculatePrice(config, allMats, availableSlidingMechanisms, availableHandleMaterials),
-    [config, allMats, availableSlidingMechanisms, availableHandleMaterials],
+    () =>
+      calculatePrice(config, allMats, availableSlidingMechanisms, availableHandleMaterials, {
+        layoutLegCount: wardrobeLayoutLegCountForConfig(room, config),
+        layoutLegWidthsCm: wardrobeLayoutLegWidthsFromConfig(room, config),
+      }),
+    [config, allMats, availableSlidingMechanisms, availableHandleMaterials, room],
   );
 
   function sendToBedroomPlanner() {
@@ -52,6 +64,7 @@ export default function HeaderToolbar() {
       name,
       config: structuredClone(config),
       cachedPrice: price.total,
+      room: structuredClone(room),
     });
     if (typeof window !== "undefined") {
       sessionStorage.setItem(PENDING_BEDROOM_WARDROBE_ID_KEY, id);
@@ -65,7 +78,12 @@ export default function HeaderToolbar() {
         <Link href="/planners" className="header-menu-btn" title="Back to planners">
           <Menu size={20} />
         </Link>
-        <button className="header-save-btn">
+        <button
+          type="button"
+          className="header-save-btn"
+          onClick={sendToBedroomPlanner}
+          title="Save to Your wardrobes and open Bedroom planner"
+        >
           <Save size={16} />
           <span>Save</span>
         </button>
@@ -110,6 +128,19 @@ export default function HeaderToolbar() {
           >
             <Download size={16} />
           </button>
+          <SendPlannerDesignToAdminDialog
+            adminSlug={admin?.slug}
+            plannerType="wardrobe"
+            plannerLabel="Wardrobe Planner"
+            buildDesign={() =>
+              buildWardrobeEmailDesign({
+                config: structuredClone(config),
+                room: structuredClone(room),
+                wardrobeSheetSizeOverrideCm,
+                price,
+              })
+            }
+          />
         </div>
       </div>
 

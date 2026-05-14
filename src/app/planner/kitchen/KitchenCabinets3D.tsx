@@ -12,6 +12,7 @@ import {
   HANDLE_COLORS,
   getEffectiveBaseDims,
   getEffectiveWallDims,
+  effectiveKitchenDoorLeafCount,
   DESIGN_REF_PRESETS,
   type KitchenMaterial,
 } from "./data";
@@ -65,6 +66,7 @@ function kitchenDoorPanelMaterial(
   return mat;
 }
 
+/** GLB mesh naming for material overrides — documented in `kitchen-catalog-glb-authors.md`. */
 const GLB_MATERIAL_OVERRIDE_SKIP_RE =
   /glass|mirror|chrome|handle|knob|hardware|hinge|rail|runner|wheel|sink|faucet|tap|metal/i;
 const GLB_DOOR_PART_RE = /door|drawer|front|facade|face|fasad|panel/i;
@@ -420,6 +422,150 @@ function Handle({
   );
 }
 
+/** Procedural framed glass insert (no catalog GLB); frame uses the same finish as door fronts. */
+function ProceduralGlassInsetFront({
+  widthM,
+  heightM,
+  frameDepthM,
+  doorPanelMat,
+}: {
+  widthM: number;
+  heightM: number;
+  frameDepthM: number;
+  doorPanelMat: THREE.Material;
+}) {
+  const f = Math.max(0.014, Math.min(0.042, Math.min(widthM, heightM) * 0.09));
+  const innerW = Math.max(widthM - 2 * f, 0.02);
+  const innerH = Math.max(heightM - 2 * f, 0.02);
+
+  const glassMat = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: "#dbe6f0",
+        metalness: 0,
+        roughness: 0.06,
+        transmission: 0.9,
+        thickness: 0.02,
+        transparent: true,
+        ior: 1.45,
+      }),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      glassMat.dispose();
+    },
+    [glassMat],
+  );
+
+  const gz = frameDepthM / 2 + 0.002;
+
+  return (
+    <group>
+      <mesh position={[0, heightM / 2 - f / 2, 0]} material={doorPanelMat} castShadow>
+        <boxGeometry args={[widthM, f, frameDepthM]} />
+      </mesh>
+      <mesh position={[0, -heightM / 2 + f / 2, 0]} material={doorPanelMat} castShadow>
+        <boxGeometry args={[widthM, f, frameDepthM]} />
+      </mesh>
+      <mesh position={[-widthM / 2 + f / 2, 0, 0]} material={doorPanelMat} castShadow>
+        <boxGeometry args={[f, heightM - 2 * f, frameDepthM]} />
+      </mesh>
+      <mesh position={[widthM / 2 - f / 2, 0, 0]} material={doorPanelMat} castShadow>
+        <boxGeometry args={[f, heightM - 2 * f, frameDepthM]} />
+      </mesh>
+      <mesh position={[0, 0, gz]} material={glassMat} castShadow receiveShadow>
+        <boxGeometry args={[innerW * 0.98, innerH * 0.98, 0.007]} />
+      </mesh>
+    </group>
+  );
+}
+
+/** One or more vertical door leaves with optional glass inset (procedural catalog only). */
+function ProceduralDoorLeaves({
+  leaves,
+  frontW,
+  frontH,
+  useGlassInsetDoor,
+  doorPanelMaterial,
+  handleStyle,
+  handleFinish,
+  isSink,
+}: {
+  leaves: number;
+  frontW: number;
+  frontH: number;
+  useGlassInsetDoor: boolean;
+  doorPanelMaterial: THREE.Material;
+  handleStyle: string;
+  handleFinish: KitchenMaterial | null;
+  isSink: boolean;
+}) {
+  const gapM = 0.003;
+  if (leaves <= 1) {
+    return (
+      <>
+        {useGlassInsetDoor ? (
+          <ProceduralGlassInsetFront
+            widthM={frontW}
+            heightM={frontH}
+            frameDepthM={0.018}
+            doorPanelMat={doorPanelMaterial}
+          />
+        ) : (
+          <mesh material={doorPanelMaterial} castShadow>
+            <boxGeometry args={[frontW, frontH, 0.018]} />
+          </mesh>
+        )}
+        {!isSink && (
+          <Handle
+            style={handleStyle}
+            panelWidthM={frontW}
+            panelHeightM={frontH}
+            variant="door"
+            handleFinish={handleFinish}
+          />
+        )}
+      </>
+    );
+  }
+  const totalGap = gapM * (leaves - 1);
+  const leafW = Math.max(0.02, (frontW - totalGap) / leaves);
+  return (
+    <>
+      {Array.from({ length: leaves }, (_, i) => {
+        const x = -frontW / 2 + leafW / 2 + i * (leafW + gapM);
+        return (
+          <group key={i} position={[x, 0, 0]}>
+            {useGlassInsetDoor ? (
+              <ProceduralGlassInsetFront
+                widthM={leafW}
+                heightM={frontH}
+                frameDepthM={0.018}
+                doorPanelMat={doorPanelMaterial}
+              />
+            ) : (
+              <mesh material={doorPanelMaterial} castShadow>
+                <boxGeometry args={[leafW, frontH, 0.018]} />
+              </mesh>
+            )}
+            {!isSink && (
+              <Handle
+                style={handleStyle}
+                panelWidthM={leafW}
+                panelHeightM={frontH}
+                variant="door"
+                handleFinish={handleFinish}
+              />
+            )}
+          </group>
+        );
+      })}
+    </>
+  );
+}
+
 // ── Single base cabinet module ────────────────────────────────────────
 
 function BaseModule({
@@ -429,8 +575,8 @@ function BaseModule({
   onClick,
   onCabinetPointerDown,
   dragMeta,
-  baseCabinetMat,
-  baseDoorMat,
+  cabinetMaterialId,
+  doorMaterialId,
   cabinetGrain,
   doorGrain,
   refW_m,
@@ -446,8 +592,8 @@ function BaseModule({
   onCabinetPointerDown: (e: ThreeEvent<PointerEvent>) => void;
   /** Enables 3D drag-to-reorder along the run (KitchenCabinetDragController). */
   dragMeta: { run: Extract<KitchenCabinetDragRun, "main-base" | "island-base" | "left-base">; index: number };
-  baseCabinetMat: THREE.Material;
-  baseDoorMat: THREE.Material;
+  cabinetMaterialId: string;
+  doorMaterialId: string;
   cabinetGrain: GrainDirection;
   doorGrain: GrainDirection;
   /** Reference outer run width × body height (m) for consistent laminate scale. */
@@ -462,6 +608,9 @@ function BaseModule({
   const D = dim.d * CM;
   const hasFreePos = module.xCm !== undefined;
   const X = hasFreePos ? module.xCm! * CM : xOffset * CM + W / 2;
+
+  const baseCabinetMat = useKitchenMaterial(cabinetMaterialId, cabinetGrain);
+  const baseDoorMat = useKitchenDoorMaterial(doorMaterialId, doorGrain);
 
   const isAppliancePanel =
     module.type === "oven-unit" ||
@@ -532,9 +681,11 @@ function BaseModule({
   const catalogMeshScene = useMemo(() => {
     if (!gltfState.loaded) return null;
     const cloned = gltfState.loaded.clone(true);
-    applyKitchenCatalogGlbMaterials(cloned, catalogCabinetMaterial, doorPanelMaterial);
+    if (!isAppliancePanel) {
+      applyKitchenCatalogGlbMaterials(cloned, catalogCabinetMaterial, doorPanelMaterial);
+    }
     return cloned;
-  }, [gltfState.loaded, catalogCabinetMaterial, doorPanelMaterial]);
+  }, [gltfState.loaded, catalogCabinetMaterial, doorPanelMaterial, isAppliancePanel]);
 
   const dragGroupRef = useRef<THREE.Group>(null);
   useKitchenDragGroupUserData(dragGroupRef, {
@@ -546,6 +697,11 @@ function BaseModule({
   const showCatalogGltf = Boolean(
     catalogGlbUrl && catalogMeshScene && gltfState.fit && !gltfState.failed,
   );
+
+  const useGlassInsetDoor =
+    !showCatalogGltf &&
+    module.doorPreset === "glassInset" &&
+    !isAppliancePanel;
 
   if (showCatalogGltf && catalogMeshScene && gltfState.fit) {
     const fit = gltfState.fit;
@@ -598,21 +754,30 @@ function BaseModule({
         </mesh>
       )}
 
-      {!isAppliancePanel && module.type !== "drawer-unit" && (
+      {!isAppliancePanel && module.type !== "drawer-unit" && module.type !== "base-open" && (
         <group position={[0, 0, frontZ]}>
-          <mesh material={doorPanelMaterial} castShadow>
-            <boxGeometry args={[frontW, frontH, 0.018]} />
-          </mesh>
-          {!isSink && (
-            <Handle
-              style={handleStyle}
-              panelWidthM={frontW}
-              panelHeightM={frontH}
-              variant="door"
-              handleFinish={handleFinish}
-            />
-          )}
+          <ProceduralDoorLeaves
+            leaves={effectiveKitchenDoorLeafCount(module)}
+            frontW={frontW}
+            frontH={frontH}
+            useGlassInsetDoor={useGlassInsetDoor}
+            doorPanelMaterial={doorPanelMaterial}
+            handleStyle={handleStyle}
+            handleFinish={handleFinish}
+            isSink={isSink}
+          />
         </group>
+      )}
+
+      {module.type === "base-open" && (
+        <mesh
+          position={[0, 0, D / 2 - 0.005]}
+          material={
+            new THREE.MeshStandardMaterial({ color: "#d0ccc4", roughness: 0.8 })
+          }
+        >
+          <boxGeometry args={[W - PT * 2, PT * 1.5, 0.01]} />
+        </mesh>
       )}
 
       {module.type === "drawer-unit" && (
@@ -620,11 +785,21 @@ function BaseModule({
           {[0, 1, 2].map((i) => {
             const drawerH = frontH / 3;
             const drawerY = frontH / 2 - drawerH * (i + 0.5);
+            const panelH = drawerH - 0.004;
             return (
               <group key={i} position={[0, drawerY, 0.001]}>
-                <mesh material={drawerFrontMat}>
-                  <boxGeometry args={[frontW, drawerH - 0.004, 0.016]} />
-                </mesh>
+                {useGlassInsetDoor ? (
+                  <ProceduralGlassInsetFront
+                    widthM={frontW}
+                    heightM={panelH}
+                    frameDepthM={0.016}
+                    doorPanelMat={drawerFrontMat}
+                  />
+                ) : (
+                  <mesh material={drawerFrontMat}>
+                    <boxGeometry args={[frontW, panelH, 0.016]} />
+                  </mesh>
+                )}
                 <mesh
                   position={[0, -drawerH / 2, 0]}
                   material={new THREE.MeshStandardMaterial({ color: "#cccccc" })}
@@ -634,7 +809,7 @@ function BaseModule({
                 <Handle
                   style={handleStyle}
                   panelWidthM={frontW}
-                  panelHeightM={Math.max(drawerH - 0.004, 0.04)}
+                  panelHeightM={Math.max(panelH, 0.04)}
                   variant="drawer"
                   handleFinish={handleFinish}
                 />
@@ -681,8 +856,8 @@ function WallModule({
   onClick,
   onCabinetPointerDown,
   dragMeta,
-  baseCabinetMat,
-  baseDoorMat,
+  cabinetMaterialId,
+  doorMaterialId,
   cabinetGrain,
   doorGrain,
   refW_m,
@@ -696,8 +871,8 @@ function WallModule({
   onClick: () => void;
   onCabinetPointerDown: (e: ThreeEvent<PointerEvent>) => void;
   dragMeta: { run: Extract<KitchenCabinetDragRun, "main-wall" | "island-wall" | "left-wall">; index: number };
-  baseCabinetMat: THREE.Material;
-  baseDoorMat: THREE.Material;
+  cabinetMaterialId: string;
+  doorMaterialId: string;
   cabinetGrain: GrainDirection;
   doorGrain: GrainDirection;
   refW_m: number;
@@ -712,6 +887,9 @@ function WallModule({
   const hasFreePos = module.xCm !== undefined && module.yCm !== undefined;
   const X = hasFreePos ? module.xCm! * CM : xOffset * CM + W / 2;
   const Y = hasFreePos ? module.yCm! * CM : WALL_MOUNT_Y * CM + H / 2;
+
+  const baseCabinetMat = useKitchenMaterial(cabinetMaterialId, cabinetGrain);
+  const baseDoorMat = useKitchenDoorMaterial(doorMaterialId, doorGrain);
 
   const isHood = module.type === "hood-unit";
   const isOpen = module.type === "wall-open";
@@ -777,6 +955,12 @@ function WallModule({
   const showWallCatalogGltf = Boolean(
     catalogGlbUrl && catalogMeshScene && gltfState.fit && !gltfState.failed,
   );
+
+  const useGlassInsetDoor =
+    !showWallCatalogGltf &&
+    module.doorPreset === "glassInset" &&
+    !isHood &&
+    !isOpen;
 
   if (showWallCatalogGltf && catalogMeshScene && gltfState.fit) {
     const fit = gltfState.fit;
@@ -865,15 +1049,15 @@ function WallModule({
 
       {!isOpen && (
         <group position={[0, 0, frontZ]}>
-          <mesh material={doorPanelMaterial} castShadow>
-            <boxGeometry args={[frontW, frontH, 0.018]} />
-          </mesh>
-          <Handle
-            style={handleStyle}
-            panelWidthM={frontW}
-            panelHeightM={frontH}
-            variant="door"
+          <ProceduralDoorLeaves
+            leaves={effectiveKitchenDoorLeafCount(module)}
+            frontW={frontW}
+            frontH={frontH}
+            useGlassInsetDoor={useGlassInsetDoor}
+            doorPanelMaterial={doorPanelMaterial}
+            handleStyle={handleStyle}
             handleFinish={handleFinish}
+            isSink={false}
           />
         </group>
       )}
@@ -1373,8 +1557,8 @@ function FloorAlignGuidesComponent({ guides }: { guides: FloorAlignGuide[] }) {
 
 function CornerUnit3D({
   corner,
-  baseCabinetMat,
-  baseDoorMat,
+  cabinetMaterialId,
+  doorMaterialId,
   cabinetGrain,
   doorGrain,
   refW_m,
@@ -1386,8 +1570,8 @@ function CornerUnit3D({
   onCabinetPointerDown,
 }: {
   corner: CornerUnitConfig;
-  baseCabinetMat: THREE.Material;
-  baseDoorMat: THREE.Material;
+  cabinetMaterialId: string;
+  doorMaterialId: string;
   cabinetGrain: GrainDirection;
   doorGrain: GrainDirection;
   refW_m: number;
@@ -1398,6 +1582,9 @@ function CornerUnit3D({
   onClick: () => void;
   onCabinetPointerDown: (e: ThreeEvent<PointerEvent>) => void;
 }) {
+  const baseCabinetMat = useKitchenMaterial(cabinetMaterialId, cabinetGrain);
+  const baseDoorMat = useKitchenDoorMaterial(doorMaterialId, doorGrain);
+
   const BW = corner.backWingWidthCm * CM;
   const LW = corner.leftWingWidthCm * CM;
   const H = corner.heightCm * CM;
@@ -1630,8 +1817,6 @@ export default function KitchenCabinets3D() {
 
   const cabinetGrain = config.cabinetGrainDirection ?? "horizontal";
   const doorGrain = config.doorGrainDirection ?? "horizontal";
-  const baseCabinetMat = useKitchenMaterial(config.cabinetMaterial, cabinetGrain);
-  const baseDoorMat = useKitchenDoorMaterial(config.doors.material, doorGrain);
 
   const cu = config.cornerUnit;
   const lw = config.leftWall;
@@ -1797,8 +1982,8 @@ export default function KitchenCabinets3D() {
           onClick={() => selectBaseModule(module.id)}
           onCabinetPointerDown={onCabinetPointerDown}
           dragMeta={{ run: "main-base", index: i }}
-          baseCabinetMat={baseCabinetMat}
-          baseDoorMat={baseDoorMat}
+          cabinetMaterialId={module.cabinetMaterialId ?? config.cabinetMaterial}
+          doorMaterialId={module.doorMaterialId ?? config.doors.material}
           cabinetGrain={cabinetGrain}
           doorGrain={doorGrain}
           refW_m={mainBaseRef.refW_m}
@@ -1819,8 +2004,8 @@ export default function KitchenCabinets3D() {
             onClick={() => selectWallModule(module.id)}
             onCabinetPointerDown={onCabinetPointerDown}
             dragMeta={{ run: "main-wall", index: i }}
-            baseCabinetMat={baseCabinetMat}
-            baseDoorMat={baseDoorMat}
+            cabinetMaterialId={module.cabinetMaterialId ?? config.cabinetMaterial}
+            doorMaterialId={module.doorMaterialId ?? config.doors.material}
             cabinetGrain={cabinetGrain}
             doorGrain={doorGrain}
             refW_m={mainWallRef.refW_m}
@@ -1849,8 +2034,8 @@ export default function KitchenCabinets3D() {
               onClick={() => selectIslandBaseModule(module.id)}
               onCabinetPointerDown={onCabinetPointerDown}
               dragMeta={{ run: "island-base", index: i }}
-              baseCabinetMat={baseCabinetMat}
-              baseDoorMat={baseDoorMat}
+              cabinetMaterialId={module.cabinetMaterialId ?? config.cabinetMaterial}
+              doorMaterialId={module.doorMaterialId ?? config.doors.material}
               cabinetGrain={cabinetGrain}
               doorGrain={doorGrain}
               refW_m={islandBaseRef.refW_m}
@@ -1869,8 +2054,8 @@ export default function KitchenCabinets3D() {
                 onClick={() => selectIslandWallModule(module.id)}
                 onCabinetPointerDown={onCabinetPointerDown}
                 dragMeta={{ run: "island-wall", index: i }}
-                baseCabinetMat={baseCabinetMat}
-                baseDoorMat={baseDoorMat}
+                cabinetMaterialId={module.cabinetMaterialId ?? config.cabinetMaterial}
+                doorMaterialId={module.doorMaterialId ?? config.doors.material}
                 cabinetGrain={cabinetGrain}
                 doorGrain={doorGrain}
                 refW_m={islandWallRef.refW_m}
@@ -1886,8 +2071,8 @@ export default function KitchenCabinets3D() {
       {cu.enabled && (
         <CornerUnit3D
           corner={cu}
-          baseCabinetMat={baseCabinetMat}
-          baseDoorMat={baseDoorMat}
+          cabinetMaterialId={config.cabinetMaterial}
+          doorMaterialId={config.doors.material}
           cabinetGrain={cabinetGrain}
           doorGrain={doorGrain}
           refW_m={cornerTexRef.refW_m}
@@ -1915,8 +2100,8 @@ export default function KitchenCabinets3D() {
                 onClick={() => selectLeftBaseModule(module.id)}
                 onCabinetPointerDown={onCabinetPointerDown}
                 dragMeta={{ run: "left-base", index: i }}
-                baseCabinetMat={baseCabinetMat}
-                baseDoorMat={baseDoorMat}
+                cabinetMaterialId={module.cabinetMaterialId ?? config.cabinetMaterial}
+                doorMaterialId={module.doorMaterialId ?? config.doors.material}
                 cabinetGrain={cabinetGrain}
                 doorGrain={doorGrain}
                 refW_m={leftBaseRef.refW_m}
@@ -1935,8 +2120,8 @@ export default function KitchenCabinets3D() {
                   onClick={() => selectLeftWallModule(module.id)}
                   onCabinetPointerDown={onCabinetPointerDown}
                   dragMeta={{ run: "left-wall", index: i }}
-                  baseCabinetMat={baseCabinetMat}
-                  baseDoorMat={baseDoorMat}
+                  cabinetMaterialId={module.cabinetMaterialId ?? config.cabinetMaterial}
+                  doorMaterialId={module.doorMaterialId ?? config.doors.material}
                   cabinetGrain={cabinetGrain}
                   doorGrain={doorGrain}
                   refW_m={leftWallRef.refW_m}

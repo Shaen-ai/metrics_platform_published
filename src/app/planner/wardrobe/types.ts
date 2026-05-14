@@ -1,4 +1,13 @@
-import type { FloorStyle } from "../types";
+import type {
+  FloorOutlinePoint,
+  FloorStyle,
+  LengthUnit,
+  PlannerFloorSurfaceFields,
+  PlannerFloorSurfacePatch,
+  PlannerWallCeilingSurfacePatch,
+  PlannerWallSurfaceFields,
+  PlannerCeilingSurfaceFields,
+} from "../types";
 import type { GrainDirection } from "../textureRepeat";
 
 export type { GrainDirection } from "../textureRepeat";
@@ -66,7 +75,8 @@ export interface WardrobeDoorConfig {
   type: DoorType;
   /**
    * Finish per physical door panel for the current `type` (length 0 when `none`).
-   * Hinged: one per section; sliding: `max(2, ceil(frame.width / 75))` (matches 3D).
+   * Hinged: one entry per door leaf (French-door bays use multiple). Sliding:
+   * `max(2, ceil(frame.width / 75))` (matches 3D).
    */
   doorPanelMaterialIds: string[];
   /** Wood grain direction per door panel — same length as `doorPanelMaterialIds`. */
@@ -97,9 +107,54 @@ export interface WardrobeBaseConfig {
   plinthRecessCm: number;
 }
 
-export interface RoomSettings {
+/** Built-in wardrobe/closet footprint presets (same cabinet design repeated per wall/run unless `bridge`). */
+export type WardrobeSpaceLayoutPreset =
+  | "linear"
+  | "l_shape"
+  | "u_shape"
+  | "parallel"
+  | "walk_in"
+  | "island_walk_in"
+  | "bridge";
+
+/** When {@link RoomSettings.spaceLayoutPreset} is `walk_in`, selects floor shape + run count. */
+export type WardrobeWalkInVariant = "u" | "l" | "parallel" | "island";
+
+/** Which wall run carries the editable bays/doors first (others reuse proportional geometry). */
+export type WardrobePrimaryRun = "back" | "left" | "right" | "side";
+
+/** `left` = −X wall wing first (default); `right` mirrors runs onto +X. */
+export type WardrobeCornerAttachment = "left" | "right";
+
+export interface RoomSettings
+  extends PlannerFloorSurfaceFields,
+    PlannerWallSurfaceFields,
+    PlannerCeilingSurfaceFields {
   wallColor: string;
   floorStyle: FloorStyle;
+  /** Preview room interior width (m). Axis-aligned placement box centered at origin. Default 3. */
+  roomWidthM?: number;
+  /** Preview room interior depth (m). Default 3. */
+  roomDepthM?: number;
+  /** Preview room interior height (m), ceiling reference. Default 2.8 — matches bedroom planner default. */
+  roomHeightM?: number;
+  /** Room footprint / cabinet placement preset. Defaults to `linear`. */
+  spaceLayoutPreset?: WardrobeSpaceLayoutPreset;
+  /** Used only with `walk_in`. Defaults to `u`. */
+  walkInVariant?: WardrobeWalkInVariant;
+  /**
+   * Elevates the whole composition (m) for `bridge` overhead cabinets.
+   * Ignored for multi-leg layouts.
+   */
+  bridgeLiftCm?: number;
+  /** L / U / walk-in variants: corner handedness (mirror along X). Default `left`. */
+  wardrobeCornerAttachment?: WardrobeCornerAttachment;
+  /** Override auto primary run (`undefined` = sensible default per preset). */
+  wardrobePrimaryRun?: WardrobePrimaryRun;
+  /** Derived polygon footprint when preset uses non-rectangular room (centered at origin in XZ). */
+  floorOutline?: FloorOutlinePoint[];
+  /** Open doorway edges for walk-in shapes (polygon edge indices, CCW from above). */
+  floorOpenEdgeIndices?: number[];
 }
 
 /**
@@ -171,10 +226,23 @@ export interface WardrobeUIState {
   dividerDragActive: boolean;
   /** Whether the user chose to customise each door panel individually. */
   customizeEachDoor: boolean;
+  /**
+   * When true, picking an exterior or interior finish updates both carcass/inside
+   * and the other surface so they stay matched.
+   */
+  linkInteriorExteriorFinishes: boolean;
+  /** cm/in/mm — persisted with wardrobe UI (standalone planner). */
+  lengthUnit: LengthUnit;
 }
 
 /** @see ../sheet/placementSheetOverrides — persisted sheet viewer tweaks (3D/planner). */
 export type WardrobeSheetPlacementOverride = import("../sheet/placementSheetOverrides").SheetPlacementOverride;
+
+/** Single undo step: cabinet config + room / footprint preset. */
+export interface WardrobeHistoryEntry {
+  config: WardrobeConfig;
+  room: RoomSettings;
+}
 
 export interface WardrobeState {
   config: WardrobeConfig;
@@ -204,8 +272,8 @@ export interface WardrobeState {
    */
   wardrobeSheetSizeOverrideCm: WardrobeSheetSizeOverrideCm | null;
 
-  /** Undo/redo history */
-  history: WardrobeConfig[];
+  /** Undo/redo history — each entry pairs config with room layout footprint. */
+  history: WardrobeHistoryEntry[];
   historyIndex: number;
   canUndo: boolean;
   canRedo: boolean;
@@ -216,6 +284,17 @@ export interface WardrobeState {
     slidingMechanisms: import("../wardrobe/data").WardrobeMaterial[],
     handleMaterials: import("../wardrobe/data").WardrobeMaterial[],
   ) => void;
+
+  /**
+   * Inject rows from the public manufacturer-template catalog when the user picks a line
+   * that is not yet in the tenant storefront list.
+   */
+  mergeCatalogMaterialsIntoPools: (
+    rows: import("../wardrobe/data").WardrobeMaterial[],
+  ) => void;
+
+  /** Replace config in one shot after hydration / catalog clamp — does not push undo history. */
+  setConfigForHydrate: (config: WardrobeConfig) => void;
 
   setSheetPlacementOverrides: (
     update:
@@ -283,23 +362,39 @@ export interface WardrobeState {
   // Materials
   setFrameMaterial: (materialId: string) => void;
   setInteriorMaterial: (materialId: string) => void;
+  /** Carcass laminate + every door/front with doors on; resets per-door customization. */
+  setExteriorMaterial: (materialId: string) => void;
   setFrameGrainDirection: (direction: GrainDirection) => void;
   setInteriorGrainDirection: (direction: GrainDirection) => void;
   setDoorGrainDirection: (direction: GrainDirection) => void;
+  /** Carcass + door front grain together (drawer-front overrides cleared). */
+  setExteriorGrainDirection: (direction: GrainDirection) => void;
 
   // Room
   setWallColor: (color: string) => void;
   setFloorStyle: (style: FloorStyle) => void;
+  setPlannerFloorSurface: (patch: PlannerFloorSurfacePatch) => void;
+  setPlannerWallCeilingSurface: (patch: PlannerWallCeilingSurfacePatch) => void;
+  setSpaceLayoutPreset: (preset: WardrobeSpaceLayoutPreset) => void;
+  setWalkInVariant: (variant: WardrobeWalkInVariant) => void;
+  setBridgeLiftCm: (cm: number) => void;
+  setRoomWidthM: (widthM: number) => void;
+  setRoomDepthM: (depthM: number) => void;
+  setRoomHeightM: (heightM: number) => void;
+  setWardrobeCornerAttachment: (attachment: WardrobeCornerAttachment) => void;
+  setWardrobePrimaryRun: (run: WardrobePrimaryRun | undefined) => void;
 
   // UI
   selectSection: (id: string | null) => void;
   selectComponent: (id: string | null) => void;
   toggleDoors: () => void;
   setCustomizeEachDoor: (on: boolean) => void;
+  setLinkInteriorExteriorFinishes: (on: boolean) => void;
   setViewMode: (mode: ViewMode) => void;
   setActiveStep: (step: PlannerStep) => void;
   setShowTemplates: (show: boolean) => void;
   toggleDimensions: () => void;
+  setLengthUnit: (unit: LengthUnit) => void;
 
   // Undo / Redo
   undo: () => void;

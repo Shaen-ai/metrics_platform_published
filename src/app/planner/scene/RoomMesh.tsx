@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { usePlannerStore } from "../store/usePlannerStore";
+import { usePlannerType } from "../context";
+import OutdoorSpaceMesh from "./OutdoorSpaceMesh";
 import type { FloorStyle, Room, RoomBeam } from "../types";
-import { createPlannerFloorMaterial } from "../laminateFloor";
+import { buildPlannerFloorMaterialFromRoom, buildPlannerWallSurfaceMaterial, buildPlannerCeilingSurfaceMaterial } from "../roomFloorMaterial";
+import { proxyTextureUrl } from "../shared/buildPhysicalMaterialFromSwatch";
 import { maxCeilingY, ceilingYAtWall, ceilingY } from "../utils/roomCeiling";
 import { createWallPrismGeometry, createSlopedCeilingGeometry, type WallName as PrismWallName } from "../utils/wallPrism";
 import { createWallPrismWithHoles, wallHoleCutsForSegment } from "../utils/wallWithHolesCsg";
@@ -13,6 +16,7 @@ import { getWallBeamBox, getCeilingBeamBox } from "../utils/beams";
 import { ROOM_WALL_THICKNESS_M as WALL_THICKNESS } from "../constants/roomGeometry";
 import { roomUsesFloorOutline } from "../utils/floorOutline";
 import PolygonRoomMesh from "./PolygonRoomMesh";
+import { DoorSlabFinish } from "./DoorSlabFinish";
 
 type WallName = "front" | "back" | "left" | "right";
 
@@ -31,6 +35,9 @@ function openingTrimWorldPos(
   if (wallName === "left") return [info.center[0] + e, y, along];
   return [info.center[0] - e, y, along];
 }
+
+/** Ignore tiny camera jitter at floor-plan planes so exterior wall hide rules don’t flicker. */
+const CAMERA_EXTERIOR_EPS_M = 0.06;
 
 /** Dollhouse cutaway: which walls to hide from camera azimuth (inside room only). */
 function getDollhouseCutawayWalls(angle: number): WallName[] {
@@ -63,10 +70,11 @@ function getWallsToHideFromCamera(
   const wallsToHide: WallName[] = [];
 
   // Outside: hide walls we're on the exterior of (never show wall backs from outside)
-  if (cz > hd) wallsToHide.push("front");
-  if (cz < -hd) wallsToHide.push("back");
-  if (cx < -hw) wallsToHide.push("left");
-  if (cx > hw) wallsToHide.push("right");
+  const e = CAMERA_EXTERIOR_EPS_M;
+  if (cz > hd + e) wallsToHide.push("front");
+  if (cz < -hd - e) wallsToHide.push("back");
+  if (cx < -hw - e) wallsToHide.push("left");
+  if (cx > hw + e) wallsToHide.push("right");
 
   // Inside: add dollhouse cutaway (hide walls that block our view)
   const isInside = cx >= -hw && cx <= hw && cz >= -hd && cz <= hd;
@@ -841,6 +849,14 @@ function wallPrismSubsegments(
   );
 }
 
+/** Inward-pointing unit normal for interior wall faces (world space, axis-aligned room). */
+function wallNormalForPrismWall(wall: PrismWallName): THREE.Vector3 {
+  if (wall === "back") return new THREE.Vector3(0, 0, 1);
+  if (wall === "front") return new THREE.Vector3(0, 0, -1);
+  if (wall === "left") return new THREE.Vector3(1, 0, 0);
+  return new THREE.Vector3(-1, 0, 0);
+}
+
 function WallPrismMesh({
   wall,
   along0,
@@ -850,6 +866,7 @@ function WallPrismMesh({
   material,
   castShadow,
   receiveShadow,
+  kitchenWall,
 }: {
   wall: PrismWallName;
   along0: number;
@@ -859,7 +876,20 @@ function WallPrismMesh({
   material: THREE.Material;
   castShadow: boolean;
   receiveShadow: boolean;
+  kitchenWall: boolean;
 }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const wallNormal = useMemo(() => wallNormalForPrismWall(wall), [wall]);
+  useLayoutEffect(() => {
+    const m = meshRef.current;
+    if (!m) return;
+    m.userData.surfaceType = "wall";
+    m.userData.zone = "indoor";
+    m.userData.wallId = wall;
+    m.userData.wallNormal = wallNormal.clone();
+    m.userData.kitchenWall = kitchenWall;
+  }, [wall, wallNormal, kitchenWall]);
+
   const geom = useMemo(
     () =>
       createWallPrismGeometry(wall, along0, along1, room, WALL_THICKNESS, yBottom),
@@ -880,7 +910,13 @@ function WallPrismMesh({
   );
   useEffect(() => () => geom.dispose(), [geom]);
   return (
-    <mesh geometry={geom} material={material} castShadow={castShadow} receiveShadow={receiveShadow} />
+    <mesh
+      ref={meshRef}
+      geometry={geom}
+      material={material}
+      castShadow={castShadow}
+      receiveShadow={receiveShadow}
+    />
   );
 }
 
@@ -894,6 +930,7 @@ function WallPrismWithHolesMesh({
   material,
   castShadow,
   receiveShadow,
+  kitchenWall,
 }: {
   wall: PrismWallName;
   segAlong0: number;
@@ -903,7 +940,20 @@ function WallPrismWithHolesMesh({
   material: THREE.Material;
   castShadow: boolean;
   receiveShadow: boolean;
+  kitchenWall: boolean;
 }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const wallNormal = useMemo(() => wallNormalForPrismWall(wall), [wall]);
+  useLayoutEffect(() => {
+    const m = meshRef.current;
+    if (!m) return;
+    m.userData.surfaceType = "wall";
+    m.userData.zone = "indoor";
+    m.userData.wallId = wall;
+    m.userData.wallNormal = wallNormal.clone();
+    m.userData.kitchenWall = kitchenWall;
+  }, [wall, wallNormal, kitchenWall]);
+
   const openingsDigest = useMemo(
     () =>
       (room.openings ?? [])
@@ -935,7 +985,13 @@ function WallPrismWithHolesMesh({
 
   useEffect(() => () => geom.dispose(), [geom]);
   return (
-    <mesh geometry={geom} material={material} castShadow={castShadow} receiveShadow={receiveShadow} />
+    <mesh
+      ref={meshRef}
+      geometry={geom}
+      material={material}
+      castShadow={castShadow}
+      receiveShadow={receiveShadow}
+    />
   );
 }
 
@@ -952,6 +1008,14 @@ function SlopedCeilingMesh({
   invisibleMaterial: THREE.Material;
   hideVisual: boolean;
 }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useLayoutEffect(() => {
+    const m = meshRef.current;
+    if (!m || hideVisual) return;
+    m.userData.surfaceType = "ceiling";
+    m.userData.zone = "indoor";
+  }, [hideVisual]);
+
   const geom = useMemo(
     () => createSlopedCeilingGeometry(room, WALL_THICKNESS, margin),
     [
@@ -970,12 +1034,60 @@ function SlopedCeilingMesh({
   const mat = hideVisual ? invisibleMaterial : material;
   return (
     <mesh
+      ref={meshRef}
       name={hideVisual ? "ceiling-shadow-blocker" : "ceiling"}
       geometry={geom}
       material={mat}
       castShadow
       receiveShadow={!hideVisual}
     />
+  );
+}
+
+/**
+ * Landscape backdrop plane for a window opening.
+ * Uses useFrame to apply a subtle parallax shift based on camera position,
+ * making the view feel alive when the user rotates around the room.
+ */
+function WindowViewBackdrop({
+  basePos,
+  rotation,
+  width,
+  height,
+  material,
+  wallName,
+}: {
+  basePos: [number, number, number];
+  rotation: [number, number, number];
+  width: number;
+  height: number;
+  material: THREE.MeshBasicMaterial;
+  wallName: "front" | "back" | "left" | "right";
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+
+  useFrame(() => {
+    const m = meshRef.current;
+    if (!m) return;
+    const PARALLAX = 0.12;
+    const MAX = Math.max(width, height) * 0.2;
+    const isLR = wallName === "left" || wallName === "right";
+    if (isLR) {
+      const dz = THREE.MathUtils.clamp(-(camera.position.z - basePos[2]) * PARALLAX, -MAX, MAX);
+      const dy = THREE.MathUtils.clamp(-(camera.position.y - basePos[1]) * PARALLAX, -MAX, MAX);
+      m.position.set(basePos[0], basePos[1] + dy, basePos[2] + dz);
+    } else {
+      const dx = THREE.MathUtils.clamp(-(camera.position.x - basePos[0]) * PARALLAX, -MAX, MAX);
+      const dy = THREE.MathUtils.clamp(-(camera.position.y - basePos[1]) * PARALLAX, -MAX, MAX);
+      m.position.set(basePos[0] + dx, basePos[1] + dy, basePos[2]);
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={basePos} rotation={rotation} material={material} renderOrder={-1}>
+      <planeGeometry args={[width, height]} />
+    </mesh>
   );
 }
 
@@ -1007,6 +1119,11 @@ function RectangularRoomMesh() {
     return { wallsToHide: initialWalls, hideCeiling: true };
   });
   const { wallsToHide, hideCeiling } = viewState;
+  const plannerType = usePlannerStore((s) => s.plannerType);
+  const kitchenWallTag =
+    plannerType === "kitchen" ||
+    plannerType === "kitchen-design" ||
+    (room.roomStyleTags?.includes("kitchen") ?? false);
 
   /** Smoothed azimuth for dollhouse cutaway — avoids rapid wall/floor toggles at sector boundaries. */
   const stableInsideAngleRef = useRef<number | null>(null);
@@ -1078,41 +1195,91 @@ function RectangularRoomMesh() {
     []
   );
 
-  // ── Wall material (uses user-selectable color) ──
-  // Use emissive so all 4 walls display the chosen color evenly, regardless of light angle.
-  // Wall mesh normals: see createWallPrismGeometry (per-face normals, no corner smoothing).
+  // ── Wall materials (per-axis span so texture scale matches front/back vs side walls) ──
   const wallColor = room.wallColor ?? "#fafafa";
-  const wallMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: wallColor,
-        emissive: wallColor,
-        emissiveIntensity: 0.3,
-        roughness: 0.85,
-        metalness: 0.0,
-      }),
-    []
+  const roomBBox = useMemo(
+    () => ({ widthM: room.width, depthM: room.depth, heightM: room.height }),
+    [room.width, room.depth, room.height],
   );
-  useEffect(() => {
-    wallMaterial.color.set(wallColor);
-    wallMaterial.emissive.set(wallColor);
-  }, [wallColor, wallMaterial]);
+
+  const wallMatWide = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(room, roomBBox, room.width, room.height, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      room.wallMaterialMode,
+      room.wallCustomTextureUrl,
+      room.wallUvRepeatX,
+      room.wallUvRepeatY,
+      room.wallUvRotationDeg,
+      room.wallTileWidthCm,
+      room.wallTileHeightCm,
+      room.width,
+      room.depth,
+      room.height,
+      invalidate,
+    ],
+  );
+
+  const wallMatDeep = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(room, roomBBox, room.depth, room.height, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      room.wallMaterialMode,
+      room.wallCustomTextureUrl,
+      room.wallUvRepeatX,
+      room.wallUvRepeatY,
+      room.wallUvRotationDeg,
+      room.wallTileWidthCm,
+      room.wallTileHeightCm,
+      room.width,
+      room.depth,
+      room.height,
+      invalidate,
+    ],
+  );
+
+  const wallMaterialFor = (wallName: PrismWallName) =>
+    wallName === "left" || wallName === "right" ? wallMatDeep : wallMatWide;
 
   // ── Floor material: file-backed wood textures with generated laminate fallback ──
-  const floorStyle = room.floorStyle ?? "laminate-natural-oak";
-
-  const floorMaterial = useMemo(
-    () =>
-      createPlannerFloorMaterial({
-        floorStyle,
-        repeat: [2.25, 2.25],
-        onTextureUpdate: invalidate,
-        toneMode: "color",
-        roughness: 0.7,
-        metalness: 0,
-      }),
-    [floorStyle, invalidate]
-  );
+  const floorMaterial = useMemo(() => {
+    const m = buildPlannerFloorMaterialFromRoom(room, [2.25, 2.25], {
+      floorWidthM: room.width,
+      floorDepthM: room.depth,
+      onTextureUpdate: invalidate,
+      toneMode: "color",
+      roughness: 0.7,
+      metalness: 0,
+    });
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -1;
+    m.polygonOffsetUnits = -1;
+    return m;
+  }, [
+      room.floorStyle,
+      room.floorMaterialMode,
+      room.floorCustomTextureUrl,
+      room.floorUvRepeatX,
+      room.floorUvRepeatY,
+      room.floorTextureWidthCm,
+      room.floorTextureHeightCm,
+      room.floorTextureStartSide,
+      room.floorLayoutPattern,
+      room.floorUvRotationDeg,
+      room.floorTileWidthCm,
+      room.floorTileHeightCm,
+      room.floorTileGroutCm,
+      room.floorTileGroutColor,
+      room.width,
+      room.depth,
+      invalidate,
+    ]);
 
   useEffect(() => {
     invalidate();
@@ -1133,37 +1300,42 @@ function RectangularRoomMesh() {
     []
   );
 
-  // Floor material array: top face (+Y) = parquet, all edges = neutral
-  const floorMaterials = useMemo(
-    () => [edgeMaterial, edgeMaterial, floorMaterial, edgeMaterial, edgeMaterial, edgeMaterial],
-    [floorMaterial, edgeMaterial]
+  // Structural slab: all neutral — finish (tiles / laminate) lives only on the inner plane above.
+  const floorSlabMaterials = useMemo(
+    () => [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial],
+    [edgeMaterial],
   );
 
-  // ── Ceiling material (wall color lightened ~30 % towards white) ──
+  // ── Ceiling material — tinted plane or repeating texture ──
   const ceilingColor = useMemo(() => {
     const [r, g, b] = hexToRgb(wallColor);
-    const factor = 0.5; // blend 50 % towards white
+    const factor = 0.5;
     return `rgb(${clamp255(r + (255 - r) * factor)},${clamp255(g + (255 - g) * factor)},${clamp255(b + (255 - b) * factor)})`;
   }, [wallColor]);
 
   const ceilingMaterial = useMemo(
     () =>
-      new THREE.MeshStandardMaterial({
-        color: ceilingColor,
-        emissive: ceilingColor,
-        emissiveIntensity: 0.35,
-        roughness: 0.95,
-        metalness: 0.0,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 2,
+      buildPlannerCeilingSurfaceMaterial(room, roomBBox, {
+        onTextureUpdate: invalidate,
       }),
-    []
+    [
+      wallColor,
+      room.ceilingMaterialMode,
+      room.ceilingCustomTextureUrl,
+      room.ceilingUvRepeatX,
+      room.ceilingUvRepeatY,
+      room.ceilingUvRotationDeg,
+      room.ceilingTileWidthCm,
+      room.ceilingTileHeightCm,
+      room.width,
+      room.depth,
+      invalidate,
+    ],
   );
+
   useEffect(() => {
-    ceilingMaterial.color.set(ceilingColor);
-    ceilingMaterial.emissive.set(ceilingColor);
-  }, [ceilingColor, ceilingMaterial]);
+    invalidate();
+  }, [ceilingMaterial, invalidate]);
 
   // ── Door frame (painted trim — contrasts with wood slab) ──
   const doorFrameMaterial = useMemo(
@@ -1243,16 +1415,66 @@ function RectangularRoomMesh() {
     []
   );
 
-  // ── Baseboard material ──
+  // ── Window view backdrop (landscape image visible through window openings) ──
+  const windowViewMaterial = useMemo(() => {
+    const mat = new THREE.MeshBasicMaterial({
+      side: THREE.FrontSide,
+      depthWrite: false,
+    });
+    const loader = new THREE.TextureLoader();
+    loader.load("/planner/window-view.jpg", (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex;
+      mat.needsUpdate = true;
+      invalidate();
+    });
+    return mat;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      windowViewMaterial.map?.dispose();
+      windowViewMaterial.dispose();
+    };
+  }, [windowViewMaterial]);
+
+  // ── Plinth / baseboard material (reactive to room plinth settings) ──
   const baseboardMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: "#f0eeec",
+        color: room.plinthColor ?? "#f0eeec",
         roughness: 0.6,
         metalness: 0.0,
       }),
-    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [room.plinthColor, room.plinthMaterialMode, room.plinthCustomTextureUrl]
   );
+
+  useEffect(() => {
+    if (
+      room.plinthMaterialMode !== "catalog" ||
+      !room.plinthCustomTextureUrl
+    ) {
+      baseboardMaterial.map = null;
+      baseboardMaterial.color.set(room.plinthColor ?? "#f0eeec");
+      baseboardMaterial.needsUpdate = true;
+      return;
+    }
+    const loader = new THREE.TextureLoader();
+    const url = proxyTextureUrl(room.plinthCustomTextureUrl);
+    loader.load(url, (tex) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(4, 1);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      baseboardMaterial.map = tex;
+      baseboardMaterial.color.set("#ffffff");
+      baseboardMaterial.needsUpdate = true;
+      invalidate();
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.plinthMaterialMode, room.plinthCustomTextureUrl, room.plinthColor, baseboardMaterial, invalidate]);
 
   const floorJunctionAoMaterial = useMemo(
     () =>
@@ -1311,6 +1533,7 @@ function RectangularRoomMesh() {
   );
 
   const openings = room.openings || [];
+  const firstWindowId = openings.find((o: { type: string }) => o.type === "window")?.id;
 
   // ── Recessed grid (6) + corner fill (4, no shadow) — all on the ceiling plane ──
   const { lightPositions, cornerFillPositions } = useMemo(() => {
@@ -1352,7 +1575,16 @@ function RectangularRoomMesh() {
   };
 
   const renderOpening = (
-    opening: { id: string; type: string; wall: string; position: number; width: number; height?: number },
+    opening: {
+      id: string;
+      type: string;
+      wall: string;
+      position: number;
+      width: number;
+      height?: number;
+      doorTextureUrl?: string;
+      doorModelUrl?: string;
+    },
     wallName: "front" | "back" | "left" | "right",
     info: { width: number; center: [number, number, number] },
     rotation: [number, number, number],
@@ -1390,9 +1622,14 @@ function RectangularRoomMesh() {
         <group key={`${wallName}-opening-${opening.id}`}>
           {/* Single flush slab; wall opening is CSG-cut */}
           <group position={openingPos} rotation={rotation}>
-            <mesh material={doorSlabMaterial} castShadow receiveShadow={false}>
-              <boxGeometry args={[slabW, slabH, doorThick]} />
-            </mesh>
+            <DoorSlabFinish
+              slabW={slabW}
+              slabH={slabH}
+              doorThick={doorThick}
+              textureUrl={opening.doorTextureUrl}
+              modelUrl={opening.doorModelUrl}
+              fallbackMaterial={doorSlabMaterial}
+            />
             {/* Front: rose + horizontal lever (disk in XY, slight Z offset) */}
             <mesh position={[handleX, handleY, hFaceZ]} rotation={[Math.PI / 2, 0, 0]} material={doorHandleMaterial} castShadow>
               <cylinderGeometry args={[roseR, roseR, 0.006, 32]} />
@@ -1579,13 +1816,49 @@ function RectangularRoomMesh() {
         >
           <boxGeometry args={[frameThickness, stileH, T]} />
         </mesh>
+
+        {/* Landscape view — only on the first window in the room */}
+        {opening.id === firstWindowId && (() => {
+          // Sit just outside the wall so the image fills the opening flush with the frame.
+          // Oversize by 1.5× so the parallax shift never exposes the edge.
+          const backdropDist = 0.02;
+          const backdropW = openingWidth * 1.3;
+          const backdropH = openingHeight * 1.3;
+          let backdropPos: [number, number, number];
+          // Normal faces INTO the room (FrontSide) → invisible from outside dollhouse view
+          let backdropRot: [number, number, number];
+          if (wallName === "front") {
+            backdropPos = [openingCenterX, windowBaseY, d / 2 + T + backdropDist];
+            backdropRot = [0, Math.PI, 0];
+          } else if (wallName === "back") {
+            backdropPos = [openingCenterX, windowBaseY, -(d / 2 + T + backdropDist)];
+            backdropRot = [0, 0, 0];
+          } else if (wallName === "left") {
+            backdropPos = [-(w / 2 + T + backdropDist), windowBaseY, openingCenterX];
+            backdropRot = [0, Math.PI / 2, 0];
+          } else {
+            backdropPos = [w / 2 + T + backdropDist, windowBaseY, openingCenterX];
+            backdropRot = [0, -Math.PI / 2, 0];
+          }
+          return (
+            <WindowViewBackdrop
+              key="window-view-backdrop"
+              basePos={backdropPos}
+              rotation={backdropRot}
+              width={backdropW}
+              height={backdropH}
+              material={windowViewMaterial}
+              wallName={wallName}
+            />
+          );
+        })()}
       </group>
     );
   };
 
   const renderWall = (wallName: PrismWallName) => {
     const isHidden = wallsToHide.includes(wallName);
-    const segMat = isHidden ? invisibleShadowMaterial : wallMaterial;
+    const segMat = isHidden ? invisibleShadowMaterial : wallMaterialFor(wallName);
 
     const wallOpenings = openings.filter((o: { wall: string }) => o.wall === wallName);
     const info = getWallInfo(wallName);
@@ -1611,6 +1884,7 @@ function RectangularRoomMesh() {
               material={segMat}
               castShadow
               receiveShadow={!isHidden}
+              kitchenWall={kitchenWallTag}
             />
           ))}
         </group>
@@ -1632,6 +1906,7 @@ function RectangularRoomMesh() {
           material={segMat}
           castShadow
           receiveShadow={!isHidden}
+          kitchenWall={kitchenWallTag}
         />
       );
     });
@@ -1662,35 +1937,100 @@ function RectangularRoomMesh() {
     return <group key={wallName}>{elements}</group>;
   };
 
-  // ── Baseboard rendering (floor line only; inset at corners so runs do not overlap) ──
+  // ── Baseboard / plinth rendering (floor line only; inset at corners so runs do not overlap) ──
+  // Door openings cut gaps in the baseboard; windows keep the strip beneath them.
   const renderBaseboards = () => {
-    const bh = 0.08;
-    const bd = 0.012;
+    if (room.plinthEnabled === false) return null;
+    const bh = Math.max(0.02, (room.plinthHeightCm ?? 8) / 100);
+    const bd = Math.max(0.005, (room.plinthDepthCm ?? 1.2) / 100);
     const inset = bd;
     const runW = Math.max(0.1, w - 2 * inset);
     const runD = Math.max(0.1, d - 2 * inset);
+
+    // Split a run (centered at 0, half-length = halfRun) into segments after
+    // removing door gaps. Returns [{center, length}] sorted left→right.
+    function splitRun(
+      halfRun: number,
+      doorGaps: Array<{ left: number; right: number }>,
+    ): Array<{ center: number; length: number }> {
+      let intervals: Array<[number, number]> = [[-halfRun, halfRun]];
+      for (const { left, right } of doorGaps) {
+        const gl = Math.max(-halfRun, left);
+        const gr = Math.min(halfRun, right);
+        if (gl >= gr) continue;
+        const next: Array<[number, number]> = [];
+        for (const [a, b] of intervals) {
+          if (gr <= a || gl >= b) {
+            next.push([a, b]);
+          } else {
+            if (a < gl) next.push([a, gl]);
+            if (gr < b) next.push([gr, b]);
+          }
+        }
+        intervals = next;
+      }
+      return intervals
+        .filter(([a, b]) => b - a > 0.005)
+        .map(([a, b]) => ({ center: (a + b) / 2, length: b - a }));
+    }
+
+    const doorOpenings = (room.openings ?? []).filter((o) => o.type === "door");
+
+    function wallSegments(wallName: "front" | "back" | "left" | "right") {
+      const isLR = wallName === "left" || wallName === "right";
+      const halfWall = (isLR ? d : w) / 2;
+      const halfRun = (isLR ? runD : runW) / 2;
+      const gaps = doorOpenings
+        .filter((o) => o.wall === wallName)
+        .map((o) => ({
+          left: o.position * halfWall - o.width / 2,
+          right: o.position * halfWall + o.width / 2,
+        }));
+      return splitRun(halfRun, gaps);
+    }
+
     return (
       <group name="baseboards">
-        {!wallsToHide.includes("back") && (
-          <mesh position={[0, bh / 2, -d / 2 + bd / 2]} material={baseboardMaterial}>
-            <boxGeometry args={[runW, bh, bd]} />
-          </mesh>
-        )}
-        {!wallsToHide.includes("front") && (
-          <mesh position={[0, bh / 2, d / 2 - bd / 2]} material={baseboardMaterial}>
-            <boxGeometry args={[runW, bh, bd]} />
-          </mesh>
-        )}
-        {!wallsToHide.includes("left") && (
-          <mesh position={[-w / 2 + bd / 2, bh / 2, 0]} material={baseboardMaterial}>
-            <boxGeometry args={[bd, bh, runD]} />
-          </mesh>
-        )}
-        {!wallsToHide.includes("right") && (
-          <mesh position={[w / 2 - bd / 2, bh / 2, 0]} material={baseboardMaterial}>
-            <boxGeometry args={[bd, bh, runD]} />
-          </mesh>
-        )}
+        {!wallsToHide.includes("back") &&
+          wallSegments("back").map((seg, i) => (
+            <mesh
+              key={`bb-back-${i}`}
+              position={[seg.center, bh / 2, -d / 2 + bd / 2]}
+              material={baseboardMaterial}
+            >
+              <boxGeometry args={[seg.length, bh, bd]} />
+            </mesh>
+          ))}
+        {!wallsToHide.includes("front") &&
+          wallSegments("front").map((seg, i) => (
+            <mesh
+              key={`bb-front-${i}`}
+              position={[seg.center, bh / 2, d / 2 - bd / 2]}
+              material={baseboardMaterial}
+            >
+              <boxGeometry args={[seg.length, bh, bd]} />
+            </mesh>
+          ))}
+        {!wallsToHide.includes("left") &&
+          wallSegments("left").map((seg, i) => (
+            <mesh
+              key={`bb-left-${i}`}
+              position={[-w / 2 + bd / 2, bh / 2, seg.center]}
+              material={baseboardMaterial}
+            >
+              <boxGeometry args={[bd, bh, seg.length]} />
+            </mesh>
+          ))}
+        {!wallsToHide.includes("right") &&
+          wallSegments("right").map((seg, i) => (
+            <mesh
+              key={`bb-right-${i}`}
+              position={[w / 2 - bd / 2, bh / 2, seg.center]}
+              material={baseboardMaterial}
+            >
+              <boxGeometry args={[bd, bh, seg.length]} />
+            </mesh>
+          ))}
       </group>
     );
   };
@@ -1889,6 +2229,19 @@ function RectangularRoomMesh() {
   const floorCx = (floorMinX + floorMaxX) / 2;
   const floorCz = (floorMinZ + floorMaxZ) / 2;
 
+  const floorGeometry = useMemo(() => new THREE.BoxGeometry(floorW, T, floorD), [floorW, floorD, T]);
+
+  useEffect(() => () => floorGeometry.dispose(), [floorGeometry]);
+
+  const floorMeshRef = useRef<THREE.Mesh>(null);
+  useLayoutEffect(() => {
+    const m = floorMeshRef.current;
+    if (!m) return;
+    m.userData.surfaceType = "floor";
+    m.userData.zone = "indoor";
+    m.userData.surfaceTopY = 0;
+  }, [w, d]);
+
   const aoT = 0.015;
   const aoY = 0.02;
   const aoRunW = Math.max(0.05, w - 2 * aoT);
@@ -1896,9 +2249,24 @@ function RectangularRoomMesh() {
 
   return (
     <group>
-      {/* ── Hardwood plank floor (thick slab — top=parquet, edges=neutral) ── */}
-      <mesh position={[floorCx, -T / 2, floorCz]} receiveShadow name="floor" material={floorMaterials}>
-        <boxGeometry args={[floorW, T, floorD]} />
+      {/* Structural slab under walls (neutral); finish surface is inner plane only */}
+      <mesh
+        geometry={floorGeometry}
+        position={[floorCx, -T / 2, floorCz]}
+        receiveShadow
+        name="floor-slab"
+        material={floorSlabMaterials}
+      />
+      <mesh
+        ref={floorMeshRef}
+        position={[0, 0.004, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+        name="floor"
+        material={floorMaterial}
+        renderOrder={1}
+      >
+        <planeGeometry args={[w, d]} />
       </mesh>
 
       {/* ── Ambient occlusion strips at floor-wall junctions (inset like baseboards — no double-dark corners) ── */}
@@ -1987,6 +2355,10 @@ function RectangularRoomMesh() {
 
 export default function RoomMesh() {
   const room = usePlannerStore((s) => s.room);
+  const plannerConfig = usePlannerType();
+  if (plannerConfig?.id === "outdoor" && !roomUsesFloorOutline(room)) {
+    return <OutdoorSpaceMesh />;
+  }
   if (roomUsesFloorOutline(room)) {
     return <PolygonRoomMesh />;
   }

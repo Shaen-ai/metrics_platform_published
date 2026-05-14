@@ -21,6 +21,7 @@ import {
   Blocks,
   Sparkles,
   PencilRuler,
+  TreePine,
 } from "lucide-react";
 import { plannerConfigs } from "./config";
 import { useStore } from "@/lib/store";
@@ -32,7 +33,8 @@ import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
 
 /**
  * `admin.selectedPlannerTypes` are **catalog sub-mode slugs** (bedroom, kitchen, …), not planner route ids.
- * Map them to hub tiles: keep 1:1 matches, add cross-cutting planners, and attach kitchen-only tools.
+ * Map them to hub tiles: keep 1:1 matches, add cross-cutting planners, attach kitchen tools when kitchen is on,
+ * and Wardrobe Planner when bedroom is on (same pattern as kitchen-design / module-planner for kitchen).
  */
 function hubAllowlistFromSubModes(subModeSlugs: string[]): Set<string> | null {
   if (!subModeSlugs || subModeSlugs.length === 0) return null;
@@ -40,12 +42,15 @@ function hubAllowlistFromSubModes(subModeSlugs: string[]): Set<string> | null {
   for (const slug of subModeSlugs) {
     ids.add(slug);
   }
-  for (const id of ["room", "ai-room", "custom-design"] as const) {
+  for (const id of ["room", "ai-room", "custom-design", "interior-design"] as const) {
     ids.add(id);
   }
   if (subModeSlugs.includes("kitchen")) {
     ids.add("kitchen-design");
     ids.add("module-planner");
+  }
+  if (subModeSlugs.includes("bedroom")) {
+    ids.add("wardrobe");
   }
   return ids;
 }
@@ -65,6 +70,7 @@ const iconMap: Record<string, React.ReactNode> = {
   Baby: <Baby className="w-8 h-8" />,
   DoorOpen: <DoorOpen className="w-8 h-8" />,
   DoorClosed: <DoorClosed className="w-8 h-8" />,
+  TreePine: <TreePine className="w-8 h-8" />,
 };
 
 export default function PlannersHubPage() {

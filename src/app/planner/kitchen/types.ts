@@ -1,4 +1,12 @@
-import type { FloorStyle, FloorOutlinePoint } from "../types";
+import type {
+  FloorStyle,
+  FloorOutlinePoint,
+  PlannerFloorSurfaceFields,
+  PlannerFloorSurfacePatch,
+  PlannerWallCeilingSurfacePatch,
+  PlannerWallSurfaceFields,
+  PlannerCeilingSurfaceFields,
+} from "../types";
 import type { KitchenShapeId } from "../utils/kitchenFloorTemplates";
 import type { GrainDirection } from "../textureRepeat";
 
@@ -6,6 +14,7 @@ export type { GrainDirection } from "../textureRepeat";
 
 export type BaseModuleType =
   | "base-cabinet"
+  | "base-open"
   | "drawer-unit"
   | "sink-unit"
   | "oven-unit"
@@ -23,6 +32,15 @@ export type WallModuleType =
   | "wall-corner";
 
 export type KitchenModuleType = BaseModuleType | WallModuleType;
+
+/** Procedural cabinet front style (ignored when a catalog GLB renders the module). */
+export type KitchenDoorPreset = "solid" | "glassInset";
+
+/** Optional args when adding run modules from the sidebar presets. */
+export type KitchenAddModuleOpts = {
+  width?: number;
+  doorPreset?: KitchenDoorPreset;
+};
 
 /** 3D drag-to-reorder: which run the cabinet mesh belongs to (see KitchenCabinetDragController). */
 export type KitchenCabinetDragRun =
@@ -52,6 +70,20 @@ export interface KitchenModule {
   adminCatalogModuleId?: string;
   /** Snapshot when added (optional); live catalog still wins after refresh. */
   adminCatalogModelUrl?: string | null;
+  /** Override kitchen global Frames material for this placement (catalog + procedural). */
+  cabinetMaterialId?: string;
+  /** Override kitchen global door/front material for this placement (catalog + procedural). */
+  doorMaterialId?: string;
+  /**
+   * Procedural front only (`glassInset` = framed translucent panel). Ignored when a finished
+   * catalog GLB is displayed.
+   */
+  doorPreset?: KitchenDoorPreset;
+  /**
+   * Procedural multi-door split (vertical leaves). Ignored for open modules, appliances,
+   * drawer-units, and when a catalog GLB renders the module. Default 1.
+   */
+  doorLeafCount?: number;
 }
 
 export type CountertopMaterial =
@@ -150,7 +182,10 @@ export interface KitchenConfig {
   designPlacements: DesignPlacement[];
 }
 
-export interface RoomSettings {
+export interface RoomSettings
+  extends PlannerFloorSurfaceFields,
+    PlannerWallSurfaceFields,
+    PlannerCeilingSurfaceFields {
   wallColor: string;
   floorStyle: FloorStyle;
   /**
@@ -266,7 +301,7 @@ export interface KitchenState {
   setAvailableWorktopMaterials: (worktops: import("./data").KitchenMaterial[]) => void;
 
   // Base modules
-  addBaseModule: (type: BaseModuleType, opts?: { width?: number }) => void;
+  addBaseModule: (type: BaseModuleType, opts?: KitchenAddModuleOpts) => void;
   /** Insert a run module from admin Module Builder / API (dims + name heuristics). */
   addModuleFromAdminCatalog: (m: import("@/lib/types").Module) => void;
   removeBaseModule: (id: string) => void;
@@ -279,7 +314,7 @@ export interface KitchenState {
   setBaseModulePosition: (id: string, xCm: number) => void;
 
   // Wall modules
-  addWallModule: (type: WallModuleType, opts?: { width?: number }) => void;
+  addWallModule: (type: WallModuleType, opts?: KitchenAddModuleOpts) => void;
   removeWallModule: (id: string) => void;
   setWallModuleWidth: (id: string, width: number) => void;
   setWallModuleDimensions: (
@@ -292,7 +327,7 @@ export interface KitchenState {
 
   // Island
   setIslandEnabled: (enabled: boolean) => void;
-  addIslandBaseModule: (type: BaseModuleType, opts?: { width?: number }) => void;
+  addIslandBaseModule: (type: BaseModuleType, opts?: KitchenAddModuleOpts) => void;
   removeIslandBaseModule: (id: string) => void;
   setIslandBaseModuleWidth: (id: string, width: number) => void;
   setIslandBaseModuleDimensions: (
@@ -301,7 +336,7 @@ export interface KitchenState {
   ) => void;
   reorderIslandBaseModules: (fromIndex: number, toIndex: number) => void;
   setIslandBaseModulePosition: (id: string, xCm: number) => void;
-  addIslandWallModule: (type: WallModuleType, opts?: { width?: number }) => void;
+  addIslandWallModule: (type: WallModuleType, opts?: KitchenAddModuleOpts) => void;
   removeIslandWallModule: (id: string) => void;
   setIslandWallModuleWidth: (id: string, width: number) => void;
   setIslandWallModuleDimensions: (
@@ -327,7 +362,7 @@ export interface KitchenState {
 
   // Left wall
   setLeftWallEnabled: (enabled: boolean) => void;
-  addLeftBaseModule: (type: BaseModuleType, opts?: { width?: number }) => void;
+  addLeftBaseModule: (type: BaseModuleType, opts?: KitchenAddModuleOpts) => void;
   removeLeftBaseModule: (id: string) => void;
   setLeftBaseModuleWidth: (id: string, width: number) => void;
   setLeftBaseModuleDimensions: (
@@ -336,7 +371,7 @@ export interface KitchenState {
   ) => void;
   reorderLeftBaseModules: (fromIndex: number, toIndex: number) => void;
   setLeftBaseModulePosition: (id: string, xCm: number) => void;
-  addLeftWallModule: (type: WallModuleType, opts?: { width?: number }) => void;
+  addLeftWallModule: (type: WallModuleType, opts?: KitchenAddModuleOpts) => void;
   removeLeftWallModule: (id: string) => void;
   setLeftWallModuleWidth: (id: string, width: number) => void;
   setLeftWallModuleDimensions: (
@@ -368,6 +403,8 @@ export interface KitchenState {
   // Room
   setWallColor: (color: string) => void;
   setFloorStyle: (style: FloorStyle) => void;
+  setPlannerFloorSurface: (patch: PlannerFloorSurfacePatch) => void;
+  setPlannerWallCeilingSurface: (patch: PlannerWallCeilingSurfacePatch) => void;
   /** First-run footprint wizard; also toggled from header “Shape”. */
   kitchenDesignSetupComplete: boolean;
   setKitchenDesignSetupComplete: (complete: boolean) => void;

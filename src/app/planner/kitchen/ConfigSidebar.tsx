@@ -46,9 +46,8 @@ import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
 import type { ModuleDimensionLimits } from "./data";
 import type { BaseModuleType, WallModuleType, DesignRefKind, GrainDirection } from "./types";
-import { LAMINATE_OPTIONS } from "../types";
-import { createLaminateThumbnailDataUrl } from "../scene/RoomMesh";
-import type { FloorStyle } from "../types";
+import { PlannerFloorSurfaceControls } from "../components/PlannerFloorSurfaceControls";
+import { PlannerInteriorSurfaceControls } from "../components/PlannerInteriorSurfaceControls";
 import { DraftScalarInput } from "../components/DraftNumberFields";
 
 /** HTML5 drag payload for reordering modules within one list (main wall base/wall, island base/wall). */
@@ -972,12 +971,16 @@ function LayoutPanel() {
 
       <div className="cfg-label cfg-label--add-modules">Add modules</div>
       <KitchenDesignerModulePresets
-        onBasePreset={(p) => addBaseModule(p.type, { width: p.defaultWidth })}
+        onBasePreset={(p) =>
+          addBaseModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset })
+        }
         onWallPreset={(p) => {
           if (!config.hasWallCabinets) toggleWallCabinets();
-          addWallModule(p.type, { width: p.defaultWidth });
+          addWallModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset });
         }}
-        onHighPreset={(p) => addBaseModule(p.type, { width: p.defaultWidth })}
+        onHighPreset={(p) =>
+          addBaseModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset })
+        }
       />
 
       <div className="cfg-divider" />
@@ -1284,12 +1287,16 @@ function IslandPanel() {
 
           <div className="cfg-label cfg-label--add-modules">Add modules</div>
           <KitchenDesignerModulePresets
-            onBasePreset={(p) => addIslandBaseModule(p.type, { width: p.defaultWidth })}
+            onBasePreset={(p) =>
+              addIslandBaseModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset })
+            }
             onWallPreset={(p) => {
               if (!island.hasWallCabinets) toggleIslandWallCabinets();
-              addIslandWallModule(p.type, { width: p.defaultWidth });
+              addIslandWallModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset });
             }}
-            onHighPreset={(p) => addIslandBaseModule(p.type, { width: p.defaultWidth })}
+            onHighPreset={(p) =>
+              addIslandBaseModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset })
+            }
           />
 
           <div className="cfg-divider" />
@@ -1654,12 +1661,16 @@ function LeftWallPanel() {
 
               <div className="cfg-label cfg-label--add-modules">Add modules</div>
               <KitchenDesignerModulePresets
-                onBasePreset={(p) => addLeftBaseModule(p.type, { width: p.defaultWidth })}
+                onBasePreset={(p) =>
+                  addLeftBaseModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset })
+                }
                 onWallPreset={(p) => {
                   if (!lw.hasWallCabinets) toggleLeftWallCabinets();
-                  addLeftWallModule(p.type, { width: p.defaultWidth });
+                  addLeftWallModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset });
                 }}
-                onHighPreset={(p) => addLeftBaseModule(p.type, { width: p.defaultWidth })}
+                onHighPreset={(p) =>
+                  addLeftBaseModule(p.type, { width: p.defaultWidth, doorPreset: p.doorPreset })
+                }
               />
 
               <div className="cfg-divider" />
@@ -2076,10 +2087,13 @@ function HandlesPanel() {
 // ── Room Panel ────────────────────────────────────────────────────────
 
 function RoomPanel() {
-  const wallColor = useKitchenStore((s) => s.room.wallColor);
-  const floorStyle = useKitchenStore((s) => s.room.floorStyle);
+  const room = useKitchenStore((s) => s.room);
+  const wallColor = room.wallColor;
+  const floorStyle = room.floorStyle;
   const setWallColor = useKitchenStore((s) => s.setWallColor);
   const setFloorStyle = useKitchenStore((s) => s.setFloorStyle);
+  const setPlannerFloorSurface = useKitchenStore((s) => s.setPlannerFloorSurface);
+  const setPlannerWallCeilingSurface = useKitchenStore((s) => s.setPlannerWallCeilingSurface);
 
   const WALL_PRESETS = [
     { color: "#e8e6e2", name: "Warm White" },
@@ -2092,51 +2106,87 @@ function RoomPanel() {
     { color: "#f5f0e8", name: "Cream" },
   ];
 
+  const wallFinishIsColor = (room.wallMaterialMode ?? "color") === "color";
+
   return (
     <div className="panel-content">
       <div className="cfg-group">
-        <span className="cfg-label">Wall Color</span>
-        <div className="color-presets">
-          {WALL_PRESETS.map((p) => (
-            <button
-              key={p.color}
-              className={`color-preset${wallColor === p.color ? " selected" : ""}`}
-              style={{ background: p.color }}
-              title={p.name}
-              onClick={() => setWallColor(p.color)}
-            />
-          ))}
-        </div>
-        <div className="cfg-label-row" style={{ marginTop: 8 }}>
-          <span className="cfg-sublabel">Custom:</span>
-          <input
-            type="color"
-            className="color-input"
-            value={wallColor}
-            onChange={(e) => setWallColor(e.target.value)}
-          />
-        </div>
+        <span className="cfg-label">Floor</span>
+        <PlannerFloorSurfaceControls
+          presetVariant="kitchen-grid"
+          floorStyle={floorStyle}
+          mode={room.floorMaterialMode}
+          textureUrl={room.floorCustomTextureUrl}
+          uvRotationDeg={room.floorUvRotationDeg}
+          textureStartSide={room.floorTextureStartSide}
+          layoutPattern={room.floorLayoutPattern}
+          tileWcm={room.floorTileWidthCm}
+          tileHcm={room.floorTileHeightCm}
+          groutCm={room.floorTileGroutCm}
+          groutColor={room.floorTileGroutColor}
+          onPresetPick={(style) => setFloorStyle(style)}
+          onPatch={(patch) => setPlannerFloorSurface(patch)}
+        />
       </div>
 
       <div className="cfg-divider" />
 
       <div className="cfg-group">
-        <span className="cfg-label">Floor Style</span>
-        <div className="floor-grid">
-          {LAMINATE_OPTIONS.map((opt) => {
-            const thumb = createLaminateThumbnailDataUrl(opt.value);
-            return (
-              <button
-                key={opt.value}
-                className={`floor-swatch${floorStyle === opt.value ? " selected" : ""}`}
-                onClick={() => setFloorStyle(opt.value as FloorStyle)}
-                title={opt.label}
-              >
-                <img src={thumb} alt={opt.label} className="floor-thumb" />
-                <span className="floor-label">{opt.label}</span>
-              </button>
-            );
-          })}
+        <span className="cfg-label">Walls & ceiling</span>
+        <PlannerInteriorSurfaceControls
+          title="Walls"
+          prefix="wall"
+          mode={room.wallMaterialMode}
+          textureUrl={room.wallCustomTextureUrl}
+          uvRepeatX={room.wallUvRepeatX}
+          uvRepeatY={room.wallUvRepeatY}
+          uvRotationDeg={room.wallUvRotationDeg}
+          tileWcm={room.wallTileWidthCm}
+          tileHcm={room.wallTileHeightCm}
+          groutCm={room.wallTileGroutCm}
+          groutColor={room.wallTileGroutColor}
+          onPatch={(patch) => setPlannerWallCeilingSurface(patch)}
+        />
+        {wallFinishIsColor ? (
+          <div style={{ marginTop: 14 }}>
+            <span className="cfg-label">Wall Color</span>
+            <div className="color-presets">
+              {WALL_PRESETS.map((p) => (
+                <button
+                  key={p.color}
+                  className={`color-preset${wallColor === p.color ? " selected" : ""}`}
+                  style={{ background: p.color }}
+                  title={p.name}
+                  onClick={() => setWallColor(p.color)}
+                />
+              ))}
+            </div>
+            <div className="cfg-label-row" style={{ marginTop: 8 }}>
+              <span className="cfg-sublabel">Custom:</span>
+              <input
+                type="color"
+                className="color-input"
+                value={wallColor}
+                onChange={(e) => setWallColor(e.target.value)}
+              />
+            </div>
+          </div>
+        ) : null}
+        <div style={{ marginTop: 14 }}>
+          <PlannerInteriorSurfaceControls
+            title="Ceiling"
+            prefix="ceiling"
+            mode={room.ceilingMaterialMode}
+            textureUrl={room.ceilingCustomTextureUrl}
+            uvRepeatX={room.ceilingUvRepeatX}
+            uvRepeatY={room.ceilingUvRepeatY}
+            uvRotationDeg={room.ceilingUvRotationDeg}
+            tileWcm={room.ceilingTileWidthCm}
+            tileHcm={room.ceilingTileHeightCm}
+            groutCm={room.ceilingTileGroutCm}
+            groutColor={room.ceilingTileGroutColor}
+            onPatch={(patch) => setPlannerWallCeilingSurface(patch)}
+          />
         </div>
       </div>
     </div>

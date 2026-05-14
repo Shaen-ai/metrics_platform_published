@@ -3,76 +3,15 @@
 import { useRef, useState } from "react";
 import { Loader2, Wand2 } from "lucide-react";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
-import { usePlannerStore } from "../store/usePlannerStore";
-import type { PlannerCatalogItem } from "../types";
 import { publicApiUrl } from "@/lib/publicEnv";
-
-type GeneratedPlanItem = {
-  id: string;
-  name: string;
-  category?: string;
-  width_m: number;
-  depth_m: number;
-  height_m: number;
-  color?: string;
-  position?: { x?: number; z?: number };
-  rotation_y?: number;
-};
+import { applyGeneratedPlan, type GeneratedPlanData } from "../utils/applyGeneratedPlan";
+import SendPlannerDesignToAdminDialog from "../components/SendPlannerDesignToAdminDialog";
+import { buildRoomPlannerEmailDesign } from "../utils/plannerDesignSnapshots";
 
 type PlannerGenerateResponse = {
-  data?: {
-    request_id: string;
-    intent: Record<string, unknown>;
-    furniture_plan: {
-      room?: { width?: number; depth?: number; height?: number };
-      items?: GeneratedPlanItem[];
-    };
-    modules: Record<string, unknown>[];
-    estimated_price: number;
-    warnings?: string[];
-  };
+  data?: GeneratedPlanData;
   message?: string;
 };
-
-function applyGeneratedPlan(data: NonNullable<PlannerGenerateResponse["data"]>) {
-  const store = usePlannerStore.getState();
-  const room = data.furniture_plan.room;
-
-  store.resetScene();
-  if (room) {
-    store.setRoom({
-      ...usePlannerStore.getState().room,
-      width: Number(room.width) || usePlannerStore.getState().room.width,
-      depth: Number(room.depth) || usePlannerStore.getState().room.depth,
-      height: Number(room.height) || usePlannerStore.getState().room.height,
-    });
-  }
-
-  const catalogItems: PlannerCatalogItem[] = (data.furniture_plan.items ?? []).map((item) => ({
-    id: `planner-${data.request_id}-${item.id}`,
-    name: item.name,
-    category: item.category || "Generated plan",
-    vendor: "",
-    price: 0,
-    width: Number(item.width_m) || 0.8,
-    depth: Number(item.depth_m) || 0.6,
-    height: Number(item.height_m) || 0.8,
-    color: item.color || "#BFA58A",
-  }));
-
-  store.addEphemeralCatalogItems(catalogItems);
-
-  for (const [index, catalogItem] of catalogItems.entries()) {
-    store.addItem(catalogItem.id);
-    const source = data.furniture_plan.items?.[index];
-    const placed = usePlannerStore.getState().placedItems.at(-1);
-    if (placed && source?.position) {
-      usePlannerStore
-        .getState()
-        .updateItemPosition(placed.id, Number(source.position.x) || 0, Number(source.position.z) || 0);
-    }
-  }
-}
 
 export default function AIPlannerForm() {
   const admin = useResolvedAdmin();
@@ -170,6 +109,32 @@ export default function AIPlannerForm() {
           {summary.warnings?.length ? <p>Notes: {summary.warnings.join(" · ")}</p> : null}
         </div>
       )}
+
+      <div className="planner-ai-form__field" style={{ marginTop: 4 }}>
+        <SendPlannerDesignToAdminDialog
+          adminSlug={admin?.slug}
+          plannerType="ai-room"
+          plannerLabel="AI Room Planner"
+          iconTrigger={false}
+          className="planner-ai-form__button"
+          buildDesign={() =>
+            buildRoomPlannerEmailDesign(
+              summary
+                ? {
+                    aiGeneratedPlan: {
+                      request_id: summary.request_id,
+                      intent: summary.intent,
+                      estimated_price: summary.estimated_price,
+                      furniture_plan: summary.furniture_plan,
+                      modules: summary.modules,
+                      warnings: summary.warnings,
+                    },
+                  }
+                : undefined,
+            )
+          }
+        />
+      </div>
     </div>
   );
 }

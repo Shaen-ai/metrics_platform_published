@@ -1,28 +1,7 @@
-import { catalogItemAllCategoryLabels } from "@/lib/catalogItemCategories";
+import { catalogItemIsSoftFurnitureMode, catalogItemIsUpholstery } from "@/lib/catalogItemCategories";
 import type { PlannerSwatchMaterial } from "@/lib/plannerMaterials";
 import type { PlannerCatalogItem } from "./types";
 import type { WardrobeMaterial } from "./wardrobe/data";
-
-/** Normalized tokens that suggest soft / upholstered GLB catalog pieces (board vs fabric picker). */
-const UPHOLSTERY_HINT = [
-  "seating",
-  "sofa",
-  "couch",
-  "armchair",
-  "chair",
-  "bed",
-  "ottoman",
-  "bench",
-  "upholstery",
-  "fabric",
-  "boucle",
-  "bouclé",
-  "sectional",
-  "loveseat",
-  "recliner",
-  "chaise",
-  "divan",
-];
 
 /**
  * Map a planner board/upholstery swatch into the wardrobe material shape for `buildMaterialFromSwatch`.
@@ -46,17 +25,17 @@ export function plannerSwatchToWardrobeMaterial(s: PlannerSwatchMaterial): Wardr
     materialType: s.materialType,
     materialTypes: s.materialTypes,
     categoryKey: s.categoryKey,
+    textureWidthCm: s.textureWidthCm,
+    textureHeightCm: s.textureHeightCm,
   };
 }
 
 /**
  * Decide whether GLB texture overrides should use board/laminate swatches or upholstery (fabric/leather/Bouclé).
+ * Upholstery swatches apply only to Soft Furniture mode items — never from category keywords alone on cabinets, etc.
  */
 export function getGlbTextureMode(item: PlannerCatalogItem): "board" | "upholstery" {
-  const labels = catalogItemAllCategoryLabels(item);
-  const blob = labels.join(" ").toLowerCase();
-  if (UPHOLSTERY_HINT.some((h) => blob.includes(h))) {
-    return "upholstery";
-  }
-  return "board";
+  if (!catalogItemIsSoftFurnitureMode(item)) return "board";
+  if (item.isFabricCustomizable) return "upholstery";
+  return catalogItemIsUpholstery(item) ? "upholstery" : "board";
 }

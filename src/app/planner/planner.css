@@ -8,6 +8,14 @@
   background: #FFF8F0;
 }
 
+.planner-layout--outdoor {
+  background: linear-gradient(180deg, #e8f4fc 0%, #f2f8f4 38%, #f8faf6 100%);
+}
+
+.planner-layout--outdoor .planner-canvas-wrapper {
+  background: linear-gradient(180deg, #b9daf0 0%, #c5e6d8 40%, #dcefe3 78%, #e8f4ea 100%);
+}
+
 /* AI Room Planner: catalog sidebar + 3D + generation form */
 .planner-layout-ai {
   display: flex;
@@ -134,15 +142,6 @@
   font-weight: 700;
   color: #365314;
 }
-
-.planner-ai-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ── Sidebar ──────────────────────────────────────────────────────── */
 
 .planner-sidebar {
   width: 320px;
@@ -449,24 +448,89 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
-/* ── Top Bar ──────────────────────────────────────────────────────── */
+.planner-canvas-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
 
-.planner-topbar {
-  display: grid;
-  grid-template-columns: minmax(170px, auto) minmax(0, 1fr) auto;
-  grid-template-areas:
-    "summary selected actions"
-    "hints hints hints";
-  align-items: center;
+/* Toolbar: totals, view actions, and selected-item finishes / dimensions */
+.planner-toolbar {
+  --planner-selection-strip-height: min(12vh, 92px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 16px;
   background: #fff;
-  border-bottom: 1px solid #F0E6D8;
-  column-gap: 16px;
-  row-gap: 6px;
-  min-height: 76px;
+  border-bottom: 1px solid #f0e6d8;
+  flex-shrink: 0;
   z-index: 5;
+}
+
+.planner-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: nowrap;
+  min-height: 44px;
+}
+
+.topbar-toolbar-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  margin-left: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.planner-toolbar-row > .topbar-section:first-child {
+  flex-shrink: 0;
+}
+
+.topbar-toolbar-actions-sep {
+  width: 1px;
+  height: 22px;
+  background: #f0e6d8;
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0 2px;
+}
+
+.topbar-selected-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a1a;
+  max-width: 10rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+  letter-spacing: -0.02em;
+}
+
+.topbar-toolbar-dims-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.planner-toolbar .topbar-toolbar-actions .topbar-dims {
+  flex-wrap: nowrap;
+}
+
+.planner-toolbar .topbar-toolbar-actions .dim-input {
+  width: 42px;
 }
 
 .topbar-section {
@@ -476,28 +540,46 @@
   min-width: 0;
 }
 
-.planner-topbar > .topbar-section:first-child {
-  grid-area: summary;
+.planner-toolbar-selection {
+  border-top: 1px solid #f0e6d8;
+  padding: 8px 16px 10px;
+  background: linear-gradient(180deg, #fdfcfa 0%, #faf8f5 100%);
+  height: var(--planner-selection-strip-height);
+  min-height: var(--planner-selection-strip-height);
+  max-height: var(--planner-selection-strip-height);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.topbar-center {
-  grid-area: selected;
-  justify-content: center;
-  min-height: 32px;
+.planner-toolbar-selection-inner {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.planner-toolbar-selection .topbar-finish-strip {
+  max-width: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.planner-toolbar-selection .topbar-finish-swatches {
+  flex-wrap: wrap;
   overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  white-space: nowrap;
 }
 
-.topbar-center::-webkit-scrollbar {
-  display: none;
-}
-
-.topbar-right {
-  grid-area: actions;
-  justify-content: flex-end;
-  margin-left: 0;
+.planner-toolbar-selection .topbar-finish-swatch {
+  width: 30px;
+  height: 30px;
 }
 
 .topbar-stat {
@@ -679,6 +761,185 @@
   height: 100%;
 }
 
+.topbar-outdoor-cushions-wrap {
+  width: 100%;
+  min-width: 0;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid #f0e6d8;
+}
+
+.topbar-outdoor-cushions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.topbar-outdoor-cushions-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+}
+
+.topbar-outdoor-cushions-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.topbar-outdoor-cushions-emdash {
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 400;
+  user-select: none;
+}
+
+.topbar-outdoor-settings-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: #e8772e;
+  background: #fff;
+  border: 1px solid #f0e6d8;
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.topbar-outdoor-settings-btn:hover {
+  background: #fef3e7;
+  border-color: #e8772e;
+}
+
+.topbar-outdoor-settings-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(232, 119, 46, 0.25);
+}
+
+.topbar-outdoor-cushions-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.topbar-outdoor-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.topbar-outdoor-block-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.topbar-outdoor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  user-select: none;
+}
+
+.topbar-outdoor-layout-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.topbar-outdoor-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.topbar-outdoor-field span:first-child {
+  flex-shrink: 0;
+  color: #9ca3af;
+}
+
+.topbar-outdoor-field select,
+.topbar-outdoor-field input[type="number"] {
+  font-size: 11px;
+  padding: 3px 7px;
+  border: 1px solid #f0e6d8;
+  border-radius: 6px;
+  background: #fefcfa;
+  color: #1a1a1a;
+  width: auto;
+  min-width: 4.5rem;
+  outline: none;
+}
+
+.topbar-outdoor-field select:focus,
+.topbar-outdoor-field input[type="number"]:focus {
+  border-color: #e8772e;
+  box-shadow: 0 0 0 2px rgba(232, 119, 46, 0.15);
+}
+
+.topbar-outdoor-fabric-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  min-width: 0;
+}
+
+.topbar-outdoor-fabric-row + .topbar-outdoor-fabric-row {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #f3f0eb;
+}
+
+.topbar-outdoor-fabric-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.topbar-outdoor-fabric-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-outdoor-fabric-swatches.topbar-finish-swatches {
+  flex: none;
+  width: 100%;
+  max-width: none;
+  padding-bottom: 2px;
+}
+
+.topbar-outdoor-fabric-empty {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
 /* Dimension inputs inline */
 .topbar-dims {
   display: flex;
@@ -752,14 +1013,13 @@
 }
 
 .topbar-hints {
-  grid-area: hints;
   display: flex;
   gap: 12px;
   width: 100%;
   padding-top: 2px;
   min-height: 18px;
   overflow: hidden;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .topbar-hints span {
@@ -800,6 +1060,7 @@
   .topbar-hints {
     display: none;
   }
+
 }
 
 @media (max-width: 600px) {
@@ -815,6 +1076,11 @@
 
   .planner-main {
     height: 60vh;
+    min-height: 360px;
+  }
+
+  .planner-toolbar {
+    --planner-selection-strip-height: min(15vh, 108px);
   }
 }
 

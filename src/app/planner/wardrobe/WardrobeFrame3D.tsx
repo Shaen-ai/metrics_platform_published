@@ -1,9 +1,7 @@
 "use client";
 
-import { useContext, useMemo } from "react";
+import { useMemo } from "react";
 import * as THREE from "three";
-import { useWardrobeStore } from "./store";
-import { WardrobeRoomContext } from "./WardrobeRoomContext";
 import { PANEL_THICKNESS, clampWardrobeBase, DEFAULT_WARDROBE_BASE } from "./data";
 import { useRealisticMaterial } from "./useRealisticMaterial";
 import {
@@ -11,6 +9,7 @@ import {
   useSheetPanelInfoForMaterial,
 } from "../sheet/useWardrobePanelPlacements";
 import { boxMaterialsForPanel } from "../sheet/renderHelpers";
+import { useWardrobeRenderedConfig } from "./wardrobeEffectiveConfig";
 
 const CM = 0.01;
 const PT = PANEL_THICKNESS * CM;
@@ -62,15 +61,16 @@ const BACK_PANEL_MATERIAL = new THREE.MeshPhysicalMaterial({
 });
 
 /**
- * Three.js BoxGeometry face order is `[+X, -X, +Y, -Y, +Z, -Z]`. For each
- * carcass panel these are the face indices whose outward normal points
- * *into* the wardrobe bay — i.e. what the customer sees after opening the
- * doors. Those faces render with the interior finish; the other faces keep
- * the frame finish (exterior).
+ * Three.js BoxGeometry face order is `[+X, -X, +Y, -Y, +Z, -Z]`.
+ *
+ * **Side panels (left/right):** every face uses the frame (exterior/carcass)
+ * finish — one physical board, one decor, including the surface seen from
+ * inside the bay.
+ *
+ * **Top, bottom, dividers:** faces whose normals point *into* a bay still use
+ * the interior finish; outer / edge faces keep the frame finish.
  */
 const INTERIOR_FACES = {
-  left: [0] as const, // +X face (right side of a left panel)
-  right: [1] as const, // -X face (left side of a right panel)
   top: [3] as const, // -Y face (downward side of a top panel)
   bottom: [2] as const, // +Y face (upward side of a bottom panel)
   divider: [0, 1] as const, // +X and -X — both sides face interior bays
@@ -95,9 +95,7 @@ function overlayInteriorFaces(
 }
 
 export default function WardrobeFrame3D() {
-  const embed = useContext(WardrobeRoomContext);
-  const storeConfig = useWardrobeStore((s) => s.config);
-  const config = embed?.config ?? storeConfig;
+  const config = useWardrobeRenderedConfig();
   const frame = config.frame;
   const sections = config.sections;
   const matId = config.frameMaterial;
@@ -141,7 +139,7 @@ export default function WardrobeFrame3D() {
     return positions;
   }, [sections]);
 
-  const leftSideFrameMats = useMemo(
+  const leftSideMats = useMemo(
     () =>
       boxMaterialsForPanel(
         baseMaterial as THREE.MeshPhysicalMaterial,
@@ -150,21 +148,8 @@ export default function WardrobeFrame3D() {
       ),
     [baseMaterial, placements, sideH, D, refW, refHSide, frameGrain],
   );
-  const leftSideInteriorMats = useMemo(
-    () =>
-      boxMaterialsForPanel(
-        interiorBaseMaterial as THREE.MeshPhysicalMaterial,
-        null,
-        { boxW: PT, boxH: sideH, boxD: D, refW, refH: refHSide, grain: interiorGrain },
-      ),
-    [interiorBaseMaterial, sideH, D, refW, refHSide, interiorGrain],
-  );
-  const leftSideMats = useMemo(
-    () => overlayInteriorFaces(leftSideFrameMats, leftSideInteriorMats, INTERIOR_FACES.left),
-    [leftSideFrameMats, leftSideInteriorMats],
-  );
 
-  const rightSideFrameMats = useMemo(
+  const rightSideMats = useMemo(
     () =>
       boxMaterialsForPanel(
         baseMaterial as THREE.MeshPhysicalMaterial,
@@ -172,19 +157,6 @@ export default function WardrobeFrame3D() {
         { boxW: PT, boxH: sideH, boxD: D, refW, refH: refHSide, grain: frameGrain },
       ),
     [baseMaterial, placements, sideH, D, refW, refHSide, frameGrain],
-  );
-  const rightSideInteriorMats = useMemo(
-    () =>
-      boxMaterialsForPanel(
-        interiorBaseMaterial as THREE.MeshPhysicalMaterial,
-        null,
-        { boxW: PT, boxH: sideH, boxD: D, refW, refH: refHSide, grain: interiorGrain },
-      ),
-    [interiorBaseMaterial, sideH, D, refW, refHSide, interiorGrain],
-  );
-  const rightSideMats = useMemo(
-    () => overlayInteriorFaces(rightSideFrameMats, rightSideInteriorMats, INTERIOR_FACES.right),
-    [rightSideFrameMats, rightSideInteriorMats],
   );
 
   const topBottomW = W - PT * 2;

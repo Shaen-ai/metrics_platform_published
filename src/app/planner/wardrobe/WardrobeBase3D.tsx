@@ -1,9 +1,7 @@
 "use client";
 
-import { useContext, useMemo } from "react";
+import { useMemo } from "react";
 import * as THREE from "three";
-import { useWardrobeStore } from "./store";
-import { WardrobeRoomContext } from "./WardrobeRoomContext";
 import {
   PANEL_THICKNESS,
   clampWardrobeBase,
@@ -18,6 +16,7 @@ import {
   type PanelRenderInfo,
 } from "../sheet/useWardrobePanelPlacements";
 import { boxMaterialsForPanel } from "../sheet/renderHelpers";
+import { useWardrobeRenderedConfig } from "./wardrobeEffectiveConfig";
 
 const CM = 0.01;
 const PT = PANEL_THICKNESS * CM;
@@ -30,9 +29,7 @@ const PLINTH_FRONT_FACE_UV_ROTATE_180: boolean[] = [false, false, false, false, 
  * Rendered at y = 0 in wardrobe space; carcass is lifted in WardrobeCanvas.
  */
 export default function WardrobeBase3D() {
-  const embed = useContext(WardrobeRoomContext);
-  const storeConfig = useWardrobeStore((s) => s.config);
-  const config = embed?.config ?? storeConfig;
+  const config = useWardrobeRenderedConfig();
   const frame = config.frame;
   const baseRaw = config.base;
   const matId = config.frameMaterial;
@@ -54,11 +51,11 @@ export default function WardrobeBase3D() {
   const plinthFrontDoorId =
     doorsCfg.type === "none"
       ? INTERNAL_RENDER_FALLBACK.id
-      : wardrobeDoorPanelMaterialIdForSection(doorsCfg, 0);
+      : wardrobeDoorPanelMaterialIdForSection(doorsCfg, 0, config.sections);
   const plinthFrontDoorGrain =
     doorsCfg.type === "none"
       ? plinthGrain
-      : wardrobeDoorPanelGrainForSection(doorsCfg, doorGrain, 0);
+      : wardrobeDoorPanelGrainForSection(doorsCfg, doorGrain, 0, config.sections);
   const firstDoorSheetPlacement =
     doorsCfg.type === "hinged"
       ? placements.get("door.hinged.0.0")

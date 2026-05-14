@@ -22,9 +22,9 @@ import {
   shelfPanelWidthCm,
   shelfPanelDepthCm,
   wardrobePlinthFrontDropCm,
+  wardrobeHingedDoorFlatBaseIndex,
 } from "../wardrobe/data";
 import type {
-  DoorType,
   GrainDirection,
   WardrobeComponent,
   WardrobeConfig,
@@ -42,13 +42,8 @@ const T = PANEL_THICKNESS;
 /** Matches WardrobeInterior3D `FRONT_CLEARANCE` (m). */
 const FRONT_CLEARANCE_M = DRAWER_FRONT_CLEARANCE_CM * CM;
 
-export interface DrawerFrontVisibleHeightOptions {
-  frameHeightCm: number;
-  doorsType: DoorType;
-  /** For sliding doors — max(y+h) over drawer/empty-section fronts, all bays (cm). */
-  slidingMaxFrontExtentCm: number;
-  /** Plinth base: extra front drop (cm) on the bottom drawer so it covers the bottom rail. */
-  plinthFrontDropCm?: number;
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
 function sectionHasDrawerFronts(section: WardrobeSection): boolean {
@@ -65,8 +60,8 @@ function drawerBottomFrontMFromY(yPosCm: number): number {
 }
 
 /**
- * Top Y (m from carcass base) of the laminated drawer stack — used to extend
- * the hinged door downward so all drawer fronts stay the same height.
+ * Top Y (m from carcass base) of the upper laminated drawer front — used to extend
+ * the hinged door downward to meet the drawer stack.
  */
 export function stackedDrawerFrontsTopM(sectionComponents: WardrobeComponent[]): number | null {
   const drawerEntries = sectionComponents
@@ -111,7 +106,7 @@ export function hingedDoorPanelVerticalCm(
     }
   }
 
-  /** Bottom drawers extend over the rail; do not lengthen the hinged leaf into the stack. */
+  /** Plinth overlap on the hinged leaf only when there are no drawer fronts in this bay. */
   const plinthDoorCm =
     plinthFrontDropCm > 1e-9 && !sectionHasDrawerFronts(section) ? plinthFrontDropCm : 0;
   if (plinthDoorCm > 1e-9) {
@@ -155,15 +150,44 @@ export function slidingDoorPanelHeightCmClamped(
 }
 
 /**
+ * Laminated drawer box pieces (sides, back, bottom) — cm dimensions match
+ * {@link WardrobeInterior3D} drawer `boxGeometry` math (U-shell + thin bottom).
+ */
+export function wardrobeDrawerBoxCutsCm(
+  sectionWidthCm: number,
+  frameDepthCm: number,
+  drawerHeightCm: number,
+): {
+  side: { widthCm: number; heightCm: number };
+  back: { widthCm: number; heightCm: number };
+  bottom: { widthCm: number; heightCm: number; thicknessCm: number };
+} {
+  const boxW_cm = sectionWidthCm - 0.5;
+  const boxD_cm = frameDepthCm - 1.14;
+  const boxH_cm = drawerHeightCm - 0.3;
+  const innerW_cm = Math.max(boxW_cm - 2 * PANEL_THICKNESS, 2);
+  return {
+    side: { widthCm: round1(boxD_cm), heightCm: round1(boxH_cm) },
+    back: { widthCm: round1(innerW_cm), heightCm: round1(boxH_cm) },
+    bottom: {
+      widthCm: round1(Math.max(innerW_cm - 0.2, 0.1)),
+      heightCm: round1(Math.max(boxD_cm - 0.2, 0.1)),
+      thicknessCm: 0.3,
+    },
+  };
+}
+
+/**
  * Drawer front placement: same vertical origin as interior components
- * (`T + yPosition` from carcass base). Heights follow `component.height` with
- * full component height; planner layout uses 0 cm between stacked drawers.
+ * (`T + yPosition` from carcass base). Heights follow `component.height`; stacked
+ * drawers with the same height get identical laminate fronts (no plinth/rail overlap
+ * extension on the bottom drawer — that overlap is modeled on hinged doors only when
+ * the bay has no drawer fronts).
  * See {@link hingedDoorPanelVerticalCm}.
  */
 export function drawerFrontLayoutM(
   sectionComponents: WardrobeComponent[],
   componentIndex: number,
-  options: DrawerFrontVisibleHeightOptions,
 ): { bottomFrontM: number; frontHM: number } {
   const drawerEntries = sectionComponents
     .map((c, i) => ({ c, i }))
@@ -177,12 +201,8 @@ export function drawerFrontLayoutM(
 
   const current = drawerEntries[idx].c;
 
-  const plinthDropM =
-    idx === 0 && (options.plinthFrontDropCm ?? 0) > 1e-9
-      ? (options.plinthFrontDropCm as number) * CM
-      : 0;
-  const bottomFrontM = drawerBottomFrontMFromY(current.yPosition) - plinthDropM;
-  const frontHM = current.height * CM - FRONT_CLEARANCE_M + plinthDropM;
+  const bottomFrontM = drawerBottomFrontMFromY(current.yPosition);
+  const frontHM = current.height * CM - FRONT_CLEARANCE_M;
 
   return { bottomFrontM, frontHM };
 }
@@ -198,7 +218,11 @@ export type PanelRole =
   | "plinth-front"
   | "plinth-back"
   | "interior-shelf"
+  | "interior-shoe-rack"
   | "interior-drawer-front"
+  | "interior-drawer-side"
+  | "interior-drawer-back"
+  | "interior-drawer-bottom"
   | "door-hinged"
   | "door-sliding";
 
@@ -248,10 +272,6 @@ function doorReductionCm(section: WardrobeSection): number {
   return extent;
 }
 
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
-}
-
 export interface EnumeratedPanels {
   /** All cuts, flat list. */
   all: PanelMeta[];
@@ -294,6 +314,16 @@ export function isFrontPanel(
   return isFrontPanelDefault(meta.role);
 }
 
+/** Strip `.addon.n` / `.leg.n` tails for stable sheet sort keys. */
+export function stripWardrobePanelInstanceSuffixes(id: string): string {
+  let s = id;
+  for (;;) {
+    const next = s.replace(/\.(?:addon|leg)\.\d+$/, "");
+    if (next === s) return s;
+    s = next;
+  }
+}
+
 /**
  * Lexicographic sort key for wardrobe sheet layout: order pieces as if
  * reading the wardrobe from the front (left bays → right). Within each bay,
@@ -303,7 +333,7 @@ export function isFrontPanel(
  * order so the laminate flow follows the same sequence.
  */
 export function wardrobePanelFrontOrderKey(meta: PanelMeta): string {
-  const id = meta.id.replace(/\.addon\.\d+$/, "");
+  const id = stripWardrobePanelInstanceSuffixes(meta.id);
   const secPad = (n: number) => String(n).padStart(4, "0");
   /** Higher yPosition (taller on the wardrobe interior) sorts first within a shelf column. */
   const yRank = (y: number) => String(Math.round(1e6 - y * 10)).padStart(8, "0");
@@ -333,12 +363,36 @@ export function wardrobePanelFrontOrderKey(meta: PanelMeta): string {
       /* d- = after door/drawer/extra-door stack for this bay */
       return `05-${secPad(s)}-d-shelf-${yRank(y)}`;
     }
+    case "interior-shoe-rack": {
+      const m = /^interior\.shoe-rack\.(\d+)\.(\d+)/.exec(id);
+      const s = m ? parseInt(m[1]!, 10) : 0;
+      const y = meta.frontSortSecondary ?? 0;
+      return `05-${secPad(s)}-d-shoe-${yRank(y)}`;
+    }
     case "interior-drawer-front": {
       const m = /^interior\.drawer\.(\d+)\.(\d+)/.exec(id);
       const s = m ? parseInt(m[1]!, 10) : 0;
       const y = meta.frontSortSecondary ?? 0;
       /* b- = after first door (a-), top drawer first */
       return `05-${secPad(s)}-b-drw-${yRank(y)}`;
+    }
+    case "interior-drawer-side": {
+      const m = /^interior\.drawer\.side\.[01]\.(\d+)\.(\d+)/.exec(id);
+      const s = m ? parseInt(m[1]!, 10) : 0;
+      const y = meta.frontSortSecondary ?? 0;
+      return `05-${secPad(s)}-b-drwbox-side-${yRank(y)}`;
+    }
+    case "interior-drawer-back": {
+      const m = /^interior\.drawer\.back\.(\d+)\.(\d+)/.exec(id);
+      const s = m ? parseInt(m[1]!, 10) : 0;
+      const y = meta.frontSortSecondary ?? 0;
+      return `05-${secPad(s)}-b-drwbox-back-${yRank(y)}`;
+    }
+    case "interior-drawer-bottom": {
+      const m = /^interior\.drawer\.bottom\.(\d+)\.(\d+)/.exec(id);
+      const s = m ? parseInt(m[1]!, 10) : 0;
+      const y = meta.frontSortSecondary ?? 0;
+      return `05-${secPad(s)}-b-drwbox-bot-${yRank(y)}`;
     }
     case "door-hinged": {
       const m = /^door\.hinged\.(\d+)\.(\d+)/.exec(id);
@@ -379,7 +433,10 @@ function grainAlongWidthFor(dir: GrainDirection): boolean {
  * a toggle re-packs the affected panels and re-samples the sheet texture,
  * so the 3D view shows the change immediately.
  */
-export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanels {
+export function enumerateWardrobePanels(
+  config: WardrobeConfig,
+  opts?: { layoutLegCount?: number },
+): EnumeratedPanels {
   const { frame, sections, doors } = config;
   const base = clampWardrobeBase(config.base ?? DEFAULT_WARDROBE_BASE);
   const plinthDropCm = wardrobePlinthFrontDropCm(base);
@@ -466,16 +523,16 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
     /** Matches WardrobeBase3D: visible kick uses door laminate when doors are on (same sheet strip as first door). */
     const plinthFrontUsesDoor = doors.type !== "none";
     const plinthFrontMat = plinthFrontUsesDoor
-      ? wardrobeDoorPanelMaterialIdForSection(doors, 0)
+      ? wardrobeDoorPanelMaterialIdForSection(doors, 0, sections)
       : frameMat;
     const plinthFrontGrain: GrainDirection = plinthFrontUsesDoor
-      ? wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, 0)
+      ? wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, 0, sections)
       : doorGrainFallback === "vertical"
         ? "horizontal"
         : frameGrain;
     const plinthFrontGrainAW = grainAlongWidthFor(plinthFrontGrain);
     const plinthFrontGrainFlexible = plinthFrontUsesDoor
-      ? wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, 0) !== "vertical"
+      ? wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, 0, sections) !== "vertical"
       : doorGrainFallback !== "vertical";
 
     let plinthFrontGroup: PanelMeta["group"];
@@ -526,8 +583,8 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
     grain: GrainDirection;
   }
   const sectionFrontInfo: SectionFrontInfo[] = sections.map((_, sIdx) => ({
-    materialId: wardrobeDoorPanelMaterialIdForSection(doors, sIdx),
-    grain: wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, sIdx),
+    materialId: wardrobeDoorPanelMaterialIdForSection(doors, sIdx, sections),
+    grain: wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, sIdx, sections),
   }));
 
   let slidingMaxFrontExtentCm = 0;
@@ -573,6 +630,21 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
           grainFlexible: true,
           frontSortSecondary: comp.yPosition,
         });
+      } else if (comp.type === "shoe-rack") {
+        const compGrain: GrainDirection = comp.grainDirection ?? interiorGrain;
+        const rackW_cm = Math.max(0.1, sw - 0.6);
+        const rackD_cm = Math.max(0.1, (D - 2) * 0.6);
+        out.push({
+          id: `interior.shoe-rack.${sIdx}.${cIdx}`,
+          role: "interior-shoe-rack",
+          label: `Shoe-rack board · section ${sIdx + 1}`,
+          materialId: interiorMat,
+          widthCm: round1(rackW_cm),
+          heightCm: round1(rackD_cm),
+          grainAlongWidth: grainAlongWidthFor(compGrain),
+          grainFlexible: true,
+          frontSortSecondary: comp.yPosition,
+        });
       } else if (comp.type === "drawer") {
         drawerComponents.push({ cIdx, comp });
       }
@@ -590,12 +662,7 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
       const { comp, cIdx } = d;
       // Match hinged door overlay (covers vertical dividers / frame edges on the sheet).
       const frontW = sw + T - DOOR_GAP_CM * 2 + doorFrontExtraWidthCm(sIdx, sections.length);
-      const { frontHM } = drawerFrontLayoutM(section.components, cIdx, {
-        frameHeightCm: H,
-        doorsType: doors.type,
-        slidingMaxFrontExtentCm,
-        plinthFrontDropCm: plinthDropCm,
-      });
+      const { frontHM } = drawerFrontLayoutM(section.components, cIdx);
       const frontH = round1(frontHM / CM);
       const compGrain: GrainDirection = comp.grainDirection ?? frontInfo.grain;
 
@@ -619,6 +686,50 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
           ? { key: `section-${sIdx}-fronts`, order: drawerIndex + 1 }
           : undefined,
       });
+
+      const boxCuts = wardrobeDrawerBoxCutsCm(sw, D, comp.height);
+      const ySort = comp.yPosition;
+      if (boxCuts.side.widthCm > 0.05 && boxCuts.side.heightCm > 0.05) {
+        for (const sideIdx of [0, 1]) {
+          out.push({
+            id: `interior.drawer.side.${sideIdx}.${sIdx}.${cIdx}`,
+            role: "interior-drawer-side",
+            label: `Drawer side · section ${sIdx + 1} · ${sideIdx + 1}/2`,
+            materialId: interiorMat,
+            widthCm: boxCuts.side.widthCm,
+            heightCm: boxCuts.side.heightCm,
+            grainAlongWidth: interiorGrainAW,
+            grainFlexible: true,
+            frontSortSecondary: ySort,
+          });
+        }
+      }
+      if (boxCuts.back.widthCm > 0.05 && boxCuts.back.heightCm > 0.05) {
+        out.push({
+          id: `interior.drawer.back.${sIdx}.${cIdx}`,
+          role: "interior-drawer-back",
+          label: `Drawer back · section ${sIdx + 1}`,
+          materialId: interiorMat,
+          widthCm: boxCuts.back.widthCm,
+          heightCm: boxCuts.back.heightCm,
+          grainAlongWidth: interiorGrainAW,
+          grainFlexible: true,
+          frontSortSecondary: ySort,
+        });
+      }
+      if (boxCuts.bottom.widthCm > 0.05 && boxCuts.bottom.heightCm > 0.05) {
+        out.push({
+          id: `interior.drawer.bottom.${sIdx}.${cIdx}`,
+          role: "interior-drawer-bottom",
+          label: `Drawer bottom · section ${sIdx + 1}`,
+          materialId: interiorMat,
+          widthCm: boxCuts.bottom.widthCm,
+          heightCm: boxCuts.bottom.heightCm,
+          grainAlongWidth: interiorGrainAW,
+          grainFlexible: true,
+          frontSortSecondary: ySort,
+        });
+      }
     });
   });
 
@@ -637,8 +748,16 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
         rowOrder += n;
         return;
       }
-      const info = sectionFrontInfo[idx];
       for (let doorIdx = 0; doorIdx < n; doorIdx++) {
+        const flat = wardrobeHingedDoorFlatBaseIndex(sections, idx) + doorIdx;
+        const matId =
+          doors.doorPanelMaterialIds[flat] ??
+          doors.doorPanelMaterialIds[0] ??
+          frameMat;
+        const grainDir =
+          doors.doorPanelGrainDirections[flat] ??
+          doors.doorPanelGrainDirections[0] ??
+          doorGrainFallback;
         // First door of each bay shares `section-{idx}-fronts` with that
         // section's drawer fronts (order 0 = door, 1… = drawers top→bottom).
         // Additional hinged leaves in the same section use `hinged-doors-row`.
@@ -655,10 +774,10 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
             n === 1
               ? `Hinged door ${idx + 1}`
               : `Hinged door · section ${idx + 1} · ${doorIdx + 1}/${n}`,
-          materialId: info.materialId,
+          materialId: matId,
           widthCm: round1(doorWidthCm),
           heightCm: round1(dh),
-          grainAlongWidth: grainAlongWidthFor(info.grain),
+          grainAlongWidth: grainAlongWidthFor(grainDir),
           group,
         });
         rowOrder += 1;
@@ -721,8 +840,27 @@ export function enumerateWardrobePanels(config: WardrobeConfig): EnumeratedPanel
     });
   }
 
+  const layoutLegCount = Math.max(1, Math.floor(opts?.layoutLegCount ?? 1));
+  let layoutDrafts = drafts.slice();
+  if (layoutLegCount > 1) {
+    const basePanels = drafts.slice();
+    for (let leg = 1; leg < layoutLegCount; leg++) {
+      const letter = String.fromCharCode(65 + leg);
+      for (const p of basePanels) {
+        layoutDrafts.push({
+          ...p,
+          id: `${p.id}.leg.${leg}`,
+          label: `${p.label} · Run ${letter}`,
+          group: p.group
+            ? { key: `${p.group.key}.leg.${leg}`, order: p.group.order }
+            : undefined,
+        });
+      }
+    }
+  }
+
   // Stamp the computed default front/non-front classification on each panel.
-  const allWithAddons: PanelMeta[] = drafts.map((p) => ({
+  const allWithAddons: PanelMeta[] = layoutDrafts.map((p) => ({
     ...p,
     defaultIsFront: isFrontPanelDefault(p.role),
   }));

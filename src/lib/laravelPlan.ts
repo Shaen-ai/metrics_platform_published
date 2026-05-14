@@ -11,6 +11,8 @@ export type PublicEntitlements = {
   image3dMonthlyLimit: number;
   image3dRemaining: number;
   inFirstImage3dBonusWindow: boolean;
+  interiorDesignMonthlyLimit?: number | null;
+  interiorDesignRemaining?: number | null;
 };
 
 function laravelApiBase(): string {
@@ -29,7 +31,7 @@ export async function fetchPublicEntitlements(slug: string): Promise<PublicEntit
 
 export async function internalConsumeFeature(
   slug: string,
-  feature: "image3d" | "ai_chat",
+  feature: "image3d" | "ai_chat" | "interior_design",
 ): Promise<{
   ok: boolean;
   status: number;
@@ -67,14 +69,14 @@ export async function assertAiChatAllowed(slug: string): Promise<
       return {
         ok: false,
         status: 503,
-        message: "Set INTERNAL_API_KEY (same as Laravel) for AI usage metering.",
+        message: "This assistant isn’t configured for this storefront yet.",
       };
     }
     if (ent.aiChatMonthlyLimit != null && (ent.aiChatRemaining ?? 0) <= 0) {
       return {
         ok: false,
         status: 429,
-        message: "AI assistant monthly limit reached for this store. Upgrade your plan or wait for the next billing month.",
+        message: "Tunzone chat monthly limit reached for this store. Upgrade your plan or wait for the next billing month.",
         entitlements: ent,
       };
     }
@@ -86,7 +88,45 @@ export async function assertAiChatAllowed(slug: string): Promise<
     return {
       ok: false,
       status: c.status,
-      message: c.message || "AI chat not available.",
+      message: c.message || "Tunzone chat isn’t available right now.",
+      entitlements: c.entitlements,
+    };
+  }
+  return { ok: true };
+}
+
+/** Reserve one interior-design generation for this storefront. */
+export async function assertInteriorDesignAllowed(slug: string): Promise<
+  | { ok: true }
+  | { ok: false; status: number; message: string; entitlements?: PublicEntitlements }
+> {
+  const key = process.env.INTERNAL_API_KEY ?? "";
+  if (!key) {
+    const ent = await fetchPublicEntitlements(slug);
+    if (!ent) {
+      return {
+        ok: false,
+        status: 503,
+        message: "This feature isn’t configured for this storefront yet.",
+      };
+    }
+    if (ent.interiorDesignMonthlyLimit != null && (ent.interiorDesignRemaining ?? 0) <= 0) {
+      return {
+        ok: false,
+        status: 429,
+        message: "Interior design monthly limit reached. Upgrade your plan or wait for the next billing month.",
+        entitlements: ent,
+      };
+    }
+    return { ok: true };
+  }
+
+  const c = await internalConsumeFeature(slug, "interior_design");
+  if (!c.ok) {
+    return {
+      ok: false,
+      status: c.status,
+      message: c.message || "Interior preview isn’t available right now.",
       entitlements: c.entitlements,
     };
   }

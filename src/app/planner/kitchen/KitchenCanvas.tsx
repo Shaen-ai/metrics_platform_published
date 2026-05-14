@@ -17,7 +17,7 @@ import { useKitchenSheetLayout } from "../sheet/useKitchenSheetLayout";
 import { sortKitchenSheetPlacements } from "../sheet/kitchenSheetSort";
 import SheetViewerModal from "../sheet/SheetViewerModal";
 import type { FloorOutlinePoint } from "../types";
-import { createPlannerFloorMaterial } from "../laminateFloor";
+import { buildPlannerFloorMaterialFromRoom, buildPlannerWallSurfaceMaterial, buildPlannerCeilingSurfaceMaterial } from "../roomFloorMaterial";
 import {
   bboxSizeFromOutline,
   outlineBoundingBox,
@@ -33,18 +33,6 @@ const CM = 0.01;
 /** Minimum room depth (m) when footprint is very small. */
 const MIN_ROOM_DEPTH_M = 2.5;
 const EMPTY_EDGE_INDICES: number[] = [];
-
-function clamp255(v: number) {
-  return Math.max(0, Math.min(255, Math.round(v)));
-}
-
-function hexToRgb(hex: string): [number, number, number] {
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
-}
 
 type KitchenWallName = "back" | "left";
 type QuadrantWall = "front" | "back" | "left" | "right";
@@ -152,11 +140,11 @@ function polygonWallHiddenDigest(
 
 function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: number; leftWallDepthCm?: number }) {
   const wallColor = useKitchenStore((s) => s.room.wallColor);
-  const floorStyle = useKitchenStore((s) => s.room.floorStyle);
-  const footprintWidthM = useKitchenStore((s) => s.room.footprintWidthM);
-  const footprintDepthM = useKitchenStore((s) => s.room.footprintDepthM);
-  const floorOutline = useKitchenStore((s) => s.room.floorOutline);
-  const floorOpenEdgeIndices = useKitchenStore((s) => s.room.floorOpenEdgeIndices) ?? EMPTY_EDGE_INDICES;
+  const kitchenRoom = useKitchenStore((s) => s.room);
+  const footprintWidthM = kitchenRoom.footprintWidthM;
+  const footprintDepthM = kitchenRoom.footprintDepthM;
+  const floorOutline = kitchenRoom.floorOutline;
+  const floorOpenEdgeIndices = kitchenRoom.floorOpenEdgeIndices ?? EMPTY_EDGE_INDICES;
   const { camera, invalidate } = useThree();
 
   const { fpW, fpD } = useMemo(() => {
@@ -177,6 +165,12 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
   const floorD = RD + 2 * T;
   const floorCx = RW / 2;
   const floorCz = RD / 2;
+
+  const rectangularFloorGeometry = useMemo(() => new THREE.BoxGeometry(floorW, T, floorD), [floorW, floorD, T]);
+
+  useEffect(() => () => rectangularFloorGeometry.dispose(), [rectangularFloorGeometry]);
+
+  const kitchenBBox = useMemo(() => ({ widthM: fpW, depthM: fpD, heightM: RH }), [fpW, fpD, RH]);
 
   const outlineQ = useMemo(() => {
     if (!floorOutline || floorOutline.length < 3) return null;
@@ -208,6 +202,25 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
       polyExtrude.ceiling?.dispose();
     };
   }, [polyExtrude.floor, polyExtrude.ceiling]);
+
+  const kitchenPolyFloorSlabMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: "#f4f2ef", roughness: 0.9, metalness: 0 }),
+    [],
+  );
+  useEffect(() => () => kitchenPolyFloorSlabMaterial.dispose(), [kitchenPolyFloorSlabMaterial]);
+
+  const kitchenPolyFinishGeometry = useMemo(() => {
+    if (!outlineQ || outlineQ.length < 3) return null;
+    const shape = createOutlineShapeXZ(outlineQ);
+    const g = new THREE.ShapeGeometry(shape);
+    g.rotateX(Math.PI / 2);
+    return g;
+  }, [outlineQ]);
+  useEffect(() => {
+    return () => {
+      kitchenPolyFinishGeometry?.dispose();
+    };
+  }, [kitchenPolyFinishGeometry]);
 
   /** Same placement + Y rotation as `createPolygonWallSegmentWithHoles` (polygon room planner). */
   const wallEdgeMetas = useMemo(() => {
@@ -303,31 +316,125 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
     return s;
   }, [polyHiddenDigest]);
 
-  const wallMat = useMemo(
+  const polyWallH = RH + T;
+  const polyWallCY = (RH - T) / 2;
+
+  const polyWallMatByEdge = useMemo(() => {
+    const map = new Map<number, THREE.MeshStandardMaterial>();
+    if (!outlineQ?.length) return map;
+    for (const wm of wallEdgeMetas) {
+      map.set(
+        wm.edgeIndex,
+        buildPlannerWallSurfaceMaterial(kitchenRoom, kitchenBBox, wm.len, polyWallH, {
+          onTextureUpdate: invalidate,
+        }),
+      );
+    }
+    return map;
+  }, [
+    outlineQ,
+    wallEdgeMetas,
+    kitchenBBox.widthM,
+    kitchenBBox.depthM,
+    kitchenBBox.heightM,
+    polyWallH,
+    wallColor,
+    kitchenRoom.wallMaterialMode,
+    kitchenRoom.wallCustomTextureUrl,
+    kitchenRoom.wallUvRepeatX,
+    kitchenRoom.wallUvRepeatY,
+    kitchenRoom.wallUvRotationDeg,
+    kitchenRoom.wallTileWidthCm,
+    kitchenRoom.wallTileHeightCm,
+    RW,
+    RD,
+    RH,
+    invalidate,
+  ]);
+
+  const polyCornerWallMat = useMemo(
     () =>
-      new THREE.MeshStandardMaterial({
-        color: wallColor,
-        emissive: wallColor,
-        emissiveIntensity: 0.25,
-        roughness: 0.88,
-        metalness: 0,
+      buildPlannerWallSurfaceMaterial(kitchenRoom, kitchenBBox, T, polyWallH, {
+        onTextureUpdate: invalidate,
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [
+      wallColor,
+      kitchenRoom.wallMaterialMode,
+      kitchenRoom.wallCustomTextureUrl,
+      kitchenRoom.wallUvRepeatX,
+      kitchenRoom.wallUvRepeatY,
+      kitchenRoom.wallUvRotationDeg,
+      kitchenRoom.wallTileWidthCm,
+      kitchenRoom.wallTileHeightCm,
+      T,
+      polyWallH,
+      kitchenBBox.widthM,
+      kitchenBBox.depthM,
+      kitchenBBox.heightM,
+      RW,
+      RD,
+      RH,
+      invalidate,
+    ],
   );
+
   useEffect(() => {
-    wallMat.color.set(wallColor);
-    wallMat.emissive.set(wallColor);
-  }, [wallColor, wallMat]);
+    return () => {
+      polyWallMatByEdge.forEach((m) => m.dispose());
+      polyCornerWallMat.dispose();
+    };
+  }, [polyWallMatByEdge, polyCornerWallMat]);
+
+  const wallMatBack = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(kitchenRoom, kitchenBBox, RW, RH + T, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      kitchenRoom.wallMaterialMode,
+      kitchenRoom.wallCustomTextureUrl,
+      kitchenRoom.wallUvRepeatX,
+      kitchenRoom.wallUvRepeatY,
+      kitchenRoom.wallUvRotationDeg,
+      kitchenRoom.wallTileWidthCm,
+      kitchenRoom.wallTileHeightCm,
+      RW,
+      RD,
+      RH,
+      invalidate,
+    ],
+  );
+
+  const wallMatLeft = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(kitchenRoom, kitchenBBox, RD, RH + T, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      kitchenRoom.wallMaterialMode,
+      kitchenRoom.wallCustomTextureUrl,
+      kitchenRoom.wallUvRepeatX,
+      kitchenRoom.wallUvRepeatY,
+      kitchenRoom.wallUvRotationDeg,
+      kitchenRoom.wallTileWidthCm,
+      kitchenRoom.wallTileHeightCm,
+      RW,
+      RD,
+      RH,
+      invalidate,
+    ],
+  );
 
   const floorMat = useMemo(() => {
     /** ~2.5 plank repeats across shorter side — reads closer to real laminate scale. */
     const repX = Math.max(1.45, floorW * 0.4);
     const repY = Math.max(1.45, floorD * 0.4);
 
-    return createPlannerFloorMaterial({
-      floorStyle,
-      repeat: [repX, repY],
+    const m = buildPlannerFloorMaterialFromRoom(kitchenRoom, [repX, repY], {
+      floorWidthM: fpW,
+      floorDepthM: fpD,
       onTextureUpdate: invalidate,
       toneMode: "multiply",
       tintLerp: { color: "#f6f4f0", alpha: 0.38 },
@@ -335,41 +442,61 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
       metalness: 0.03,
       envMapIntensity: 0.55,
     });
-  }, [floorStyle, floorW, floorD, invalidate]);
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -1;
+    m.polygonOffsetUnits = -1;
+    return m;
+  }, [
+    kitchenRoom.floorStyle,
+    kitchenRoom.floorMaterialMode,
+    kitchenRoom.floorCustomTextureUrl,
+    kitchenRoom.floorUvRepeatX,
+    kitchenRoom.floorUvRepeatY,
+    kitchenRoom.floorTextureWidthCm,
+    kitchenRoom.floorTextureHeightCm,
+    kitchenRoom.floorTextureStartSide,
+    kitchenRoom.floorLayoutPattern,
+    kitchenRoom.floorUvRotationDeg,
+    kitchenRoom.floorTileWidthCm,
+    kitchenRoom.floorTileHeightCm,
+    kitchenRoom.floorTileGroutCm,
+    kitchenRoom.floorTileGroutColor,
+    fpW,
+    fpD,
+    floorW,
+    floorD,
+    invalidate,
+  ]);
 
   const edgeMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: "#f4f2ef", roughness: 0.9, metalness: 0 }),
     [],
   );
 
-  const floorMaterials = useMemo(
-    () => [edgeMaterial, edgeMaterial, floorMat, edgeMaterial, edgeMaterial, edgeMaterial],
-    [floorMat, edgeMaterial],
+  const floorSlabMaterials = useMemo(
+    () => [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial],
+    [edgeMaterial],
   );
-
-  const ceilingColor = useMemo(() => {
-    const [r, g, b] = hexToRgb(wallColor);
-    const f = 0.5;
-    return `rgb(${clamp255(r + (255 - r) * f)},${clamp255(g + (255 - g) * f)},${clamp255(b + (255 - b) * f)})`;
-  }, [wallColor]);
 
   const ceilingMat = useMemo(
     () =>
-      new THREE.MeshStandardMaterial({
-        color: ceilingColor,
-        emissive: ceilingColor,
-        emissiveIntensity: 0.35,
-        roughness: 0.95,
-        metalness: 0,
+      buildPlannerCeilingSurfaceMaterial(kitchenRoom, kitchenBBox, {
+        onTextureUpdate: invalidate,
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [
+      wallColor,
+      kitchenRoom.ceilingMaterialMode,
+      kitchenRoom.ceilingCustomTextureUrl,
+      kitchenRoom.ceilingUvRepeatX,
+      kitchenRoom.ceilingUvRepeatY,
+      kitchenRoom.ceilingUvRotationDeg,
+      kitchenRoom.ceilingTileWidthCm,
+      kitchenRoom.ceilingTileHeightCm,
+      fpW,
+      fpD,
+      invalidate,
+    ],
   );
-  useEffect(() => {
-    ceilingMat.color.set(ceilingColor);
-    ceilingMat.emissive.set(ceilingColor);
-    invalidate();
-  }, [ceilingColor, ceilingMat, invalidate]);
 
   const ceilingMaterials = useMemo(
     () => [edgeMaterial, edgeMaterial, edgeMaterial, ceilingMat, edgeMaterial, edgeMaterial],
@@ -406,13 +533,19 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
     [],
   );
 
-  const polyWallH = RH + T;
-  const polyWallCY = (RH - T) / 2;
-
   if (outlineQ && polyExtrude.floor && polyExtrude.ceiling) {
     return (
       <group>
-        <mesh geometry={polyExtrude.floor} material={floorMat} receiveShadow />
+        <mesh geometry={polyExtrude.floor} material={kitchenPolyFloorSlabMaterial} receiveShadow />
+        {kitchenPolyFinishGeometry ? (
+          <mesh
+            position={[0, 0.004, 0]}
+            geometry={kitchenPolyFinishGeometry}
+            material={floorMat}
+            receiveShadow
+            renderOrder={1}
+          />
+        ) : null}
         {wallEdgeMetas.map((w) => {
           const hideWall = hiddenPolyEdgeSet.has(w.edgeIndex);
           return (
@@ -420,7 +553,9 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
               key={w.edgeIndex}
               position={[w.cx, polyWallCY, w.cz]}
               rotation={[0, w.rotY, 0]}
-              material={hideWall ? invisibleShadowMat : wallMat}
+              material={
+                hideWall ? invisibleShadowMat : polyWallMatByEdge.get(w.edgeIndex) ?? invisibleShadowMat
+              }
               castShadow
               receiveShadow={!hideWall}
             >
@@ -439,7 +574,7 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
             <mesh
               key={`corner-${p.i}`}
               position={[p.x, polyWallCY, p.z]}
-              material={wallMat}
+              material={polyCornerWallMat}
               castShadow
               receiveShadow
             >
@@ -459,8 +594,15 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
   return (
     <group>
       {/* Floor slab — same thickness / edge treatment as room & wardrobe planners (top y = 0) */}
-      <mesh position={[floorCx, -T / 2, floorCz]} material={floorMaterials} receiveShadow>
-        <boxGeometry args={[floorW, T, floorD]} />
+      <mesh geometry={rectangularFloorGeometry} position={[floorCx, -T / 2, floorCz]} material={floorSlabMaterials} receiveShadow />
+      <mesh
+        position={[floorCx, 0.004, floorCz]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+        material={floorMat}
+        renderOrder={1}
+      >
+        <planeGeometry args={[RW, RD]} />
       </mesh>
 
       {/* AO strips at back / left (open on right & front) */}
@@ -478,7 +620,7 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
       {/* Back wall — extends left to overlap with left wall at corner, down through floor, stops at ceiling bottom */}
       <mesh
         position={[(RW - T) / 2, (RH - T) / 2, -T / 2]}
-        material={hideBack ? invisibleShadowMat : wallMat}
+        material={hideBack ? invisibleShadowMat : wallMatBack}
         castShadow
         receiveShadow={!hideBack}
       >
@@ -488,7 +630,7 @@ function KitchenRoom({ totalWidthCm, leftWallDepthCm = 0 }: { totalWidthCm: numb
       {/* Left wall — extends back to overlap with back wall at corner, down through floor, stops at ceiling bottom */}
       <mesh
         position={[-T / 2, (RH - T) / 2, (RD - T) / 2]}
-        material={hideLeft ? invisibleShadowMat : wallMat}
+        material={hideLeft ? invisibleShadowMat : wallMatLeft}
         castShadow
         receiveShadow={!hideLeft}
       >
@@ -617,6 +759,7 @@ export default function KitchenCanvas() {
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.1,
+          preserveDrawingBuffer: true,
         }}
         onPointerMissed={() => {
           const st = useKitchenStore.getState();

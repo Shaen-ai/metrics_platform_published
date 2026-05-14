@@ -1,47 +1,130 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useStore } from "@/lib/store";
 import { Button, Card, CardContent } from "@/components/ui";
-import { formatPrice } from "@/lib/utils";
-import { ArrowLeft, Home } from "lucide-react";
+import { formatPrice, toRelativeStorageUrl } from "@/lib/utils";
+import { ArrowLeft, Home, Plus, ShoppingCart } from "lucide-react";
 import CatalogModelViewer from "@/components/CatalogModelViewer";
 import { useTranslation } from "@/hooks/useTranslation";
 import { getCatalog3dPresentation } from "@/lib/catalog3d";
+import {
+  catalogFabricSwatchSourceMaterials,
+  fabricPartAllowedMaterialIds,
+  plannerSwatchesFromMaterialList,
+} from "@/lib/plannerMaterials";
+import { catalogItemIsSoftFurnitureMode, catalogItemIsUpholstery } from "@/lib/catalogItemCategories";
+import type { CatalogItem } from "@/lib/types";
+
+/** Normalize fabric fields from API (camelCase or snake_case) and infer from `fabricParts` when flag missing. */
+function resolveFabricCatalogMeta(item: CatalogItem) {
+  const raw = item as CatalogItem & {
+    is_fabric_customizable?: boolean;
+    fabric_parts?: CatalogItem["fabricParts"];
+    available_colors?: { name: string; hex: string }[];
+  };
+  const fabricParts = raw.fabricParts ?? raw.fabric_parts;
+  const isFabricCustomizable = Boolean(
+    raw.isFabricCustomizable ??
+      raw.is_fabric_customizable ??
+      (Array.isArray(fabricParts) && fabricParts.length > 0),
+  );
+  const availableColors = raw.availableColors ?? raw.available_colors ?? [];
+  return {
+    isFabricCustomizable,
+    fabricParts,
+    availableColors,
+  };
+}
+
+/**
+ * Resolve a material image URL so model-viewer can load it without CORS issues:
+ * - Backend storage URLs  → site-relative path (Next.js rewrites to API)
+ * - External CDN URLs     → /api/image-proxy?url=… (server-side fetch, same-origin)
+ * - Already relative URLs → unchanged
+ */
+function proxyCatalogTextureUrl(url: string): string {
+  const relative = toRelativeStorageUrl(url);
+  // toRelativeStorageUrl returns the original absolute URL when it can't make it relative
+  // (i.e. it's an external CDN). Route those through the image proxy to avoid CORS.
+  if (relative === url && /^https?:\/\//i.test(url)) {
+    return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+  }
+  return relative;
+}
+
+function resolveCatalogItemModeId(item: CatalogItem): string | undefined {
+  const raw = item as CatalogItem & { mode_id?: string };
+  return item.modeId ?? raw.mode_id;
+}
 
 export default function CatalogDetailPage() {
   const params = useParams();
   const itemId = params.id as string;
+  const router = useRouter();
   const { t } = useTranslation();
-  const [view, setView] = useState<"photos" | "3d">("photos");
-  const [selectedImage, setSelectedImage] = useState(0);
+  const [viewOverride, setViewOverride] = useState<{ itemId: string; view: "photos" | "3d" } | null>(null);
+  const [selectedImageState, setSelectedImageState] = useState<{ itemId: string; index: number } | null>(null);
+  const [selectedFabricId, setSelectedFabricId] = useState<string | null>(null);
+  const [addedToCart, setAddedToCart] = useState(false);
 
-  const { catalogItems, initializeStore, initialized } = useStore();
+  const { catalogItems, initializeStore, initialized, materials, admin, addToCart } = useStore();
 
   useEffect(() => {
     initializeStore();
   }, [initializeStore]);
 
   const item = catalogItems.find((i) => i.id === itemId);
+  const fabricMeta = useMemo(() => (item ? resolveFabricCatalogMeta(item) : null), [item]);
+
+  const showUpholsterySection = useMemo(() => {
+    if (!item || !fabricMeta) return false;
+    if (!catalogItemIsSoftFurnitureMode(item)) return false;
+    if (fabricMeta.isFabricCustomizable) return true;
+    return catalogItemIsUpholstery(item);
+  }, [item, fabricMeta]);
+
+  const upholsterySwatches = useMemo(() => {
+    if (!item || !fabricMeta || !showUpholsterySection) return [];
+    const sourceMats = catalogFabricSwatchSourceMaterials(
+      {
+        isFabricCustomizable: true,
+        modeId: resolveCatalogItemModeId(item),
+        fabricParts: fabricMeta.fabricParts,
+      },
+      materials,
+    );
+    const allSwatches = plannerSwatchesFromMaterialList(sourceMats, admin?.companyName);
+    const parts = fabricMeta.fabricParts;
+    if (!parts?.length) return allSwatches;
+
+    const hasUnrestricted = parts.some((p) => fabricPartAllowedMaterialIds(p) === null);
+    if (hasUnrestricted) return allSwatches;
+
+    const unionIds = [...new Set(parts.flatMap((p) => fabricPartAllowedMaterialIds(p) ?? []))];
+    if (unionIds.length === 0) return allSwatches;
+
+    const allowed = new Set(unionIds);
+    const filtered = allSwatches.filter((s) => allowed.has(s.id));
+    return filtered.length > 0 ? filtered : allSwatches;
+  }, [item, fabricMeta, showUpholsterySection, materials, admin?.companyName]);
+
+  const selectedFabric = useMemo(
+    () => upholsterySwatches.find((s) => s.id === selectedFabricId) ?? null,
+    [upholsterySwatches, selectedFabricId],
+  );
 
   const td = item ? getCatalog3dPresentation(item) : "none";
   const canShow3d = td === "viewer";
   const generating3d = td === "generating";
   const show3dTab = td !== "none";
-
-  useEffect(() => {
-    setSelectedImage(0);
-    if (!item) {
-      setView("photos");
-      return;
-    }
-    const presentation = getCatalog3dPresentation(item);
-    const preferThreeD = presentation === "viewer" || presentation === "generating";
-    setView(preferThreeD ? "3d" : "photos");
-  }, [itemId, item?.id, item?.modelUrl, item?.modelStatus]);
+  const defaultView = canShow3d || generating3d ? "3d" : "photos";
+  const view = viewOverride?.itemId === itemId ? viewOverride.view : defaultView;
+  const selectedImage = selectedImageState?.itemId === itemId ? selectedImageState.index : 0;
+  const selectedImageSrc = item ? toRelativeStorageUrl(item.images[selectedImage]) : "";
 
   if (!initialized) {
     return (
@@ -96,7 +179,7 @@ export default function CatalogDetailPage() {
               <div className="flex gap-2 mb-4 p-1 rounded-xl bg-[var(--muted)] w-fit">
                 <button
                   type="button"
-                  onClick={() => setView("photos")}
+                  onClick={() => setViewOverride({ itemId, view: "photos" })}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     view === "photos"
                       ? "bg-[var(--background)] shadow text-[var(--foreground)]"
@@ -107,7 +190,7 @@ export default function CatalogDetailPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setView("3d")}
+                  onClick={() => setViewOverride({ itemId, view: "3d" })}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     view === "3d"
                       ? "bg-[var(--background)] shadow text-[var(--foreground)]"
@@ -125,7 +208,8 @@ export default function CatalogDetailPage() {
                   <CatalogModelViewer
                     src={item.modelUrl}
                     alt={item.name}
-                    fallbackImage={item.images[0]}
+                    fallbackImage={toRelativeStorageUrl(item.images[0])}
+                    fabricTextureUrl={selectedFabric?.imageUrl ? proxyCatalogTextureUrl(selectedFabric.imageUrl) : undefined}
                   />
                 ) : view === "3d" && generating3d ? (
                   <div className="flex flex-col items-center justify-center h-full min-h-[320px] px-6 text-center">
@@ -136,9 +220,9 @@ export default function CatalogDetailPage() {
                   <div className="flex flex-col items-center justify-center h-full min-h-[320px] px-6 text-center text-[var(--muted-foreground)]">
                     <p>3D model could not be generated.</p>
                   </div>
-                ) : item.images[selectedImage] ? (
+                ) : selectedImageSrc ? (
                   <Image
-                    src={item.images[selectedImage]}
+                    src={selectedImageSrc}
                     alt={item.name}
                     fill
                     className="object-cover"
@@ -153,19 +237,23 @@ export default function CatalogDetailPage() {
 
             {view === "photos" && item.images.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-2">
-                {item.images.map((img, index) => (
+                {item.images.map((img, index) => {
+                  const thumbnailSrc = toRelativeStorageUrl(img);
+                  if (!thumbnailSrc) return null;
+                  return (
                   <button
                     key={index}
-                    onClick={() => setSelectedImage(index)}
+                    onClick={() => setSelectedImageState({ itemId, index })}
                     className={`w-20 h-20 relative rounded-xl overflow-hidden flex-shrink-0 transition-all ${
                       selectedImage === index
                         ? "ring-2 ring-[var(--primary)]"
                         : "opacity-70 hover:opacity-100"
                     }`}
                   >
-                    <Image src={img} alt={`${item.name} ${index + 1}`} fill className="object-cover" />
+                    <Image src={thumbnailSrc} alt={`${item.name} ${index + 1}`} fill className="object-cover" />
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -177,12 +265,92 @@ export default function CatalogDetailPage() {
               <h2 className="text-4xl mb-3">{item.name}</h2>
               <p className="text-3xl font-bold text-[var(--primary)]">
                 {formatPrice(item.price, item.currency)}
+                {item.unit && (
+                  <span className="text-base font-normal text-[var(--muted-foreground)] ml-2">
+                    / {item.unit}
+                  </span>
+                )}
               </p>
             </div>
 
             <p className="text-[var(--muted-foreground)] mb-6 leading-relaxed">{item.description}</p>
 
-            {item.dimensions && (
+            {fabricMeta && fabricMeta.availableColors.length > 0 && (
+              <Card className="mb-6">
+                <CardContent className="p-5">
+                  <h3 className="font-semibold mb-3">Colors</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {fabricMeta.availableColors.map((c) => (
+                      <div
+                        key={`${c.name}-${c.hex}`}
+                        className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                        title={c.name}
+                      >
+                        <span
+                          className="w-6 h-6 rounded-md border border-[var(--border)] shrink-0"
+                          style={{ background: c.hex || "#ccc" }}
+                        />
+                        <span>{c.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {showUpholsterySection && upholsterySwatches.length > 0 && (
+              <Card className="mb-6">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold">Upholstery</h3>
+                    {selectedFabric && (
+                      <span className="text-sm text-[var(--muted-foreground)]">
+                        {selectedFabric.name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {upholsterySwatches.map((swatch) => {
+                      const picked = selectedFabricId === swatch.id;
+                      return (
+                        <button
+                          key={swatch.id}
+                          type="button"
+                          title={swatch.name}
+                          onClick={() => setSelectedFabricId(picked ? null : swatch.id)}
+                          className={`w-12 h-12 rounded-lg overflow-hidden border-2 transition-all ${
+                            picked
+                              ? "border-[var(--primary)] shadow-md scale-110"
+                              : "border-[var(--border)] hover:border-[var(--primary)]/50 hover:scale-105"
+                          }`}
+                        >
+                          {swatch.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={proxyCatalogTextureUrl(swatch.imageUrl)}
+                              alt={swatch.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span
+                              className="block w-full h-full"
+                              style={{ background: swatch.color || "#ccc" }}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedFabric && (
+                    <p className="text-xs text-[var(--muted-foreground)] mt-2">
+                      Click the selected fabric to deselect. Switch to 3D view to preview on the model.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {item.modeId !== "mode-building-materials" && item.dimensions && (
               <Card className="mb-6">
                 <CardContent className="p-5">
                   <h3 className="font-semibold mb-3">Dimensions</h3>
@@ -204,6 +372,28 @@ export default function CatalogDetailPage() {
               </Card>
             )}
 
+            {item.modeId === "mode-building-materials" && (item.surfaceItemWidthCm || item.surfaceItemHeightCm) && (
+              <Card className="mb-6">
+                <CardContent className="p-5">
+                  <h3 className="font-semibold mb-3">Surface dimensions</h3>
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    {item.surfaceItemWidthCm && (
+                      <div>
+                        <p className="text-2xl font-bold">{item.surfaceItemWidthCm}</p>
+                        <p className="text-sm text-[var(--muted-foreground)]">Width (cm)</p>
+                      </div>
+                    )}
+                    {item.surfaceItemHeightCm && (
+                      <div>
+                        <p className="text-2xl font-bold">{item.surfaceItemHeightCm}</p>
+                        <p className="text-sm text-[var(--muted-foreground)]">Height / Length (cm)</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="mb-6">
               <CardContent className="p-5">
                 <h3 className="font-semibold mb-1">Delivery Time</h3>
@@ -213,14 +403,32 @@ export default function CatalogDetailPage() {
               </CardContent>
             </Card>
 
-            <div className="flex gap-3">
-              <Link href="/catalog" className="flex-1">
-                <Button variant="outline" className="w-full">
-                  Back to Catalog
-                </Button>
-              </Link>
-              <Link href="/planners" className="flex-1">
-                <Button className="w-full">
+            <div className="flex flex-row flex-nowrap gap-3 w-full min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart(item);
+                  setAddedToCart(true);
+                  setTimeout(() => setAddedToCart(false), 1500);
+                }}
+                className="flex flex-1 items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[var(--primary)] text-white font-semibold text-sm transition-all hover:opacity-90 active:scale-95 min-w-0"
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                {addedToCart ? "Added!" : "Add to Cart"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart(item);
+                  router.push("/checkout");
+                }}
+                className="flex flex-1 items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[var(--foreground)] text-[var(--background)] font-semibold text-sm transition-all hover:opacity-90 active:scale-95 min-w-0"
+              >
+                <ShoppingCart className="w-4 h-4 shrink-0" />
+                Order
+              </button>
+              <Link href="/planners" className="flex flex-1 min-w-0">
+                <Button className="w-full h-full min-h-[48px] rounded-xl font-semibold text-sm">
                   Try in Planner
                 </Button>
               </Link>

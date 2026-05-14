@@ -22,6 +22,7 @@ import {
   drawerFrontLayoutM,
   hingedDoorPanelVerticalCm,
   slidingDoorPanelHeightCmClamped,
+  wardrobeDrawerBoxCutsCm,
 } from "../sheet/wardrobePanels";
 
 const CM = 0.01;
@@ -49,19 +50,6 @@ function round1(n: number): number {
 }
 
 const FRONT_TYPES = new Set(["drawer", "empty-section"]);
-
-/** Max interior front extent across bays — matches sliding door math in WardrobeDoors3D. */
-function slidingMaxFrontExtentCm(sections: WardrobeSection[]): number {
-  let m = 0;
-  for (const sec of sections) {
-    for (const comp of sec.components) {
-      if (FRONT_TYPES.has(comp.type)) {
-        m = Math.max(m, comp.yPosition + comp.height);
-      }
-    }
-  }
-  return m;
-}
 
 /** Max top of drawer/empty fronts (cm from interior floor) — matches WardrobeDoors3D / wardrobePanels. */
 function doorReductionCm(section: WardrobeSection): number {
@@ -173,9 +161,6 @@ export function buildWardrobeLaminateChart(config: WardrobeConfig): LaminateRow[
     });
   }
 
-  const slidingMaxExtent =
-    doors.type === "sliding" ? slidingMaxFrontExtentCm(sections) : 0;
-
   // Interior: shelves & drawer fronts (matches WardrobeInterior3D m → cm)
   sections.forEach((section, sIdx) => {
     const sw = section.width;
@@ -192,15 +177,23 @@ export function buildWardrobeLaminateChart(config: WardrobeConfig): LaminateRow[
           note: "Span × depth, shelf thickness = component height",
         });
       }
+      if (comp.type === "shoe-rack") {
+        const rackW = Math.max(0.1, sw - 0.6);
+        const rackD = Math.max(0.1, (D - 2) * 0.6);
+        rows.push({
+          label: `Shoe-rack board — section ${sIdx + 1} #${cIdx + 1}`,
+          widthCm: round1(rackW),
+          heightCm: round1(rackD),
+          thicknessCm: 1,
+          qty: 1,
+          category: "interior",
+          note: "Angled shelf plank (matches 3D shoe-rack board)",
+        });
+      }
       if (comp.type === "drawer") {
         const drawerGapCm = 0.0002 / CM;
         const frontW = sw + T - 2 * drawerGapCm + doorFrontExtraWidthCm(sIdx, sections.length);
-        const { frontHM } = drawerFrontLayoutM(section.components, cIdx, {
-          frameHeightCm: H,
-          doorsType: doors.type,
-          slidingMaxFrontExtentCm: slidingMaxExtent,
-          plinthFrontDropCm: plinthDropCm,
-        });
+        const { frontHM } = drawerFrontLayoutM(section.components, cIdx);
         const frontH = round1(frontHM / CM);
         rows.push({
           label: `Drawer front — section ${sIdx + 1} #${cIdx + 1}`,
@@ -211,6 +204,39 @@ export function buildWardrobeLaminateChart(config: WardrobeConfig): LaminateRow[
           category: "interior",
           note: "Front face — same overlay & thickness as hinged doors (matches 3D)",
         });
+        const box = wardrobeDrawerBoxCutsCm(sw, D, comp.height);
+        if (box.side.widthCm > 0.05 && box.side.heightCm > 0.05) {
+          rows.push({
+            label: `Drawer side — section ${sIdx + 1} #${cIdx + 1}`,
+            widthCm: box.side.widthCm,
+            heightCm: box.side.heightCm,
+            thicknessCm: T,
+            qty: 2,
+            category: "interior",
+            note: "Laminated drawer box wing (matches 3D)",
+          });
+        }
+        if (box.back.widthCm > 0.05 && box.back.heightCm > 0.05) {
+          rows.push({
+            label: `Drawer back — section ${sIdx + 1} #${cIdx + 1}`,
+            widthCm: box.back.widthCm,
+            heightCm: box.back.heightCm,
+            thicknessCm: T,
+            qty: 1,
+            category: "interior",
+          });
+        }
+        if (box.bottom.widthCm > 0.05 && box.bottom.heightCm > 0.05) {
+          rows.push({
+            label: `Drawer bottom — section ${sIdx + 1} #${cIdx + 1}`,
+            widthCm: box.bottom.widthCm,
+            heightCm: box.bottom.heightCm,
+            thicknessCm: box.bottom.thicknessCm,
+            qty: 1,
+            category: "interior",
+            note: "Thin bottom panel in 3D (≈3 mm)",
+          });
+        }
       }
     });
   });

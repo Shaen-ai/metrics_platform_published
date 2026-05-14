@@ -7,16 +7,25 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "download:vegetation": "node scripts/download-vegetation.mjs",
+    "optimize:vegetation": "node scripts/optimize-vegetation.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1",
+    "@google/generative-ai": "^0.24.1",
     "@google/model-viewer": "^4.2.0",
+    "@react-pdf/renderer": "^4.5.1",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@react-three/postprocessing": "^3.0.4",
     "@types/three": "^0.182.0",
     "@types/uuid": "^10.0.0",
     "clsx": "^2.1.1",
     "fabric": "^7.1.0",
+    "framer-motion": "^12.38.0",
+    "immer": "^11.1.8",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
     "react": "19.2.3",
@@ -29,6 +38,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.3.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -36,6 +46,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "patch-package": "^8.0.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

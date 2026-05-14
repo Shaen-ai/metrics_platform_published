@@ -5,6 +5,8 @@ import { Html } from "@react-three/drei";
 import { useWardrobeStore } from "./store";
 import { PANEL_THICKNESS, clampWardrobeBase, totalWardrobeHeightCm, wardrobeBaseLiftCm } from "./data";
 
+import { useWardrobeRenderedConfig } from "./wardrobeEffectiveConfig";
+
 const CM = 0.01;
 const PT = PANEL_THICKNESS * CM;
 
@@ -44,9 +46,10 @@ function DimPill({
 }
 
 export default function DimensionAnnotations() {
-  const frame = useWardrobeStore((s) => s.config.frame);
-  const base = useWardrobeStore((s) => s.config.base);
-  const sections = useWardrobeStore((s) => s.config.sections);
+  const config = useWardrobeRenderedConfig();
+  const frame = config.frame;
+  const base = config.base;
+  const sections = config.sections;
   const showDimensions = useWardrobeStore((s) => s.ui.showDimensions);
 
   const b = clampWardrobeBase(base);

@@ -1,5 +1,9 @@
 import type { WardrobeConfig } from "@/app/planner/wardrobe/types";
-import type { KitchenConfig } from "@/app/planner/kitchen/types";
+import type {
+  KitchenConfig,
+  KitchenDoorPreset,
+  KitchenModuleType,
+} from "@/app/planner/kitchen/types";
 
 /** User-saved wardrobe designs for Bedroom planner (local persistence only). */
 export interface PlannerSavedWardrobe {
@@ -8,6 +12,8 @@ export interface PlannerSavedWardrobe {
   config: WardrobeConfig;
   /** Price snapshot from wardrobe planner when saved (for room totals). */
   cachedPrice: number;
+  /** Wardrobe planner space layout — preserves multi-leg packing when saving to bedroom. */
+  room?: import("@/app/planner/wardrobe/types").RoomSettings;
 }
 
 export interface CatalogItem {
@@ -23,6 +29,7 @@ export interface CatalogItem {
   modelError?: string | null;
   description: string;
   category: string;
+  plannerSubcategory?: string | null;
   additionalCategories?: string[];
   allCategories?: string[];
   price: number;
@@ -45,6 +52,22 @@ export interface CatalogItem {
   wallMounted?: boolean;
   mountHeight?: number | null;
   isActive: boolean;
+  forDesign?: boolean;
+  supportsOutdoorCushions?: boolean;
+  outdoorCushionDefaults?: Record<string, unknown> | null;
+  isFabricCustomizable?: boolean;
+  fabricParts?: Array<{ id: string; name: string; allowedMaterialIds: string[] | null }>;
+  /** Overrides keyword-based rule in `placementRules.js`. */
+  placementRuleId?: string | null;
+  /** Real-world dimensions of what the texture photo represents (cm). */
+  surfaceTextureWidthCm?: number | null;
+  surfaceTextureHeightCm?: number | null;
+  /** Physical size of one sellable unit / roll (cm). */
+  surfaceItemWidthCm?: number | null;
+  surfaceItemHeightCm?: number | null;
+  surfaceLayoutPattern?: 'aligned' | 'staggered' | 'herringbone' | null;
+  /** Pricing unit for building-material catalog items (sqm, meter, piece, roll, box, kg). */
+  unit?: string | null;
 }
 
 /**
@@ -57,10 +80,13 @@ export interface CatalogItem {
  */
 /** Which axis of the sheet the grain runs along, or "none" for random-rotatable. */
 export type MaterialGrainDirection = "along_width" | "along_height" | "none";
+export type FloorLayoutPattern = "aligned" | "staggered";
 
 export interface Material {
   id: string;
   adminId: string;
+  /** Present on API rows; `mode-building-materials` rows must not appear as upholstery. */
+  modeId?: string;
   name: string;
   /** Present when the row was imported from a manufacturer catalog template. */
   manufacturer?: string | null;
@@ -81,6 +107,13 @@ export interface Material {
   grainDirection?: MaterialGrainDirection;
   /** Saw-kerf gap between cuts. Absent → 3 mm. */
   kerfMm?: number;
+  /** Real size of one visible repeat/tile/board used by floor planners. */
+  textureWidthCm?: number | null;
+  textureHeightCm?: number | null;
+  /** Sellable item coverage size (box, roll, sheet, tile pack) used for counts/pricing. */
+  productWidthCm?: number | null;
+  productHeightCm?: number | null;
+  floorLayoutPattern?: FloorLayoutPattern | null;
 }
 
 /** Admin-defined optional extras on a configurable module template. */
@@ -118,6 +151,11 @@ export interface Module {
   placementType: 'floor' | 'wall';
   /** Browser-only modules from Module Planner (not from admin API). */
   source?: 'planner';
+  /** When set (Module Planner), Kitchen Designer uses this instead of inferring from `name`. */
+  kitchenModuleType?: KitchenModuleType;
+  kitchenDoorPreset?: KitchenDoorPreset;
+  /** Procedural vertical door leaves (1–6); ignored for open modules / drawer-units / appliances. */
+  kitchenDoorLeafCount?: number;
   cabinetMaterialId?: string;
   doorMaterialId?: string;
   /** API module: enables template configurator on the published site. */
@@ -176,6 +214,15 @@ export interface Admin {
   publicCatalogDefaultLayout?: string;
   customDesignKey?: string | null;
   entitlements?: PlanEntitlementsSnapshot;
+  /** How strictly AI interior-design uses catalog SKUs (surfaced on `/public/{slug}`). */
+  interiorDesignCatalogCoverage?: InteriorDesignCatalogCoverage;
+}
+
+export type InteriorDesignCatalogCoverageMode = "percent" | "count";
+
+export interface InteriorDesignCatalogCoverage {
+  mode: InteriorDesignCatalogCoverageMode;
+  value: number;
 }
 
 export interface PublicSiteTexts {

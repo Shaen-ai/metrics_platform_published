@@ -9,6 +9,10 @@ import type {
   WardrobeComponent,
   WardrobeComponentType,
   RoomSettings,
+  WardrobeSpaceLayoutPreset,
+  WardrobeWalkInVariant,
+  WardrobeCornerAttachment,
+  WardrobePrimaryRun,
   DoorType,
   HandleStyle,
   HingedDoorHandleSide,
@@ -21,7 +25,13 @@ import type {
   ShelfDepthPlacement,
   WardrobeSheetSizeOverrideCm,
 } from "./types";
-import type { FloorStyle } from "../types";
+import {
+  normalizeSpaceLayoutFields,
+  WARDROBE_BRIDGE_LIFT_DEFAULT_CM,
+} from "./wardrobeSpaceLayout";
+import { normalizeFloorStyle } from "../types";
+import { normalizePlannerFloorSurfaceFields, normalizePlannerWallCeilingSurfaceFields } from "../roomFloorMaterial";
+import { normalizeLengthUnit } from "../utils/units";
 import {
   getComponentDef,
   PANEL_THICKNESS,
@@ -39,7 +49,11 @@ import {
   clampWardrobeBase,
   resizeDoorPanelMaterialIds,
   resizeDoorPanelGrainDirections,
+  wardrobeManufacturerRowForDoorPool,
+  wardrobeManufacturerRowForFramePool,
   wardrobeDoorPanelMaterialIdsLength,
+  normalizeHingedDoorPanelMaterialIds,
+  normalizeHingedDoorPanelGrainDirections,
   syncDoorPanelArrays,
   LEG_HEIGHT_MIN,
   LEG_HEIGHT_MAX,
@@ -60,7 +74,7 @@ const MAX_HISTORY = 50;
 interface PersistedData {
   config: WardrobeConfig;
   room?: RoomSettings;
-  ui: Pick<WardrobeUIState, "showDoors" | "customizeEachDoor">;
+  ui: Pick<WardrobeUIState, "showDoors" | "customizeEachDoor" | "linkInteriorExteriorFinishes" | "lengthUnit">;
   wardrobeSheetSizeOverrideCm?: WardrobeSheetSizeOverrideCm | null;
 }
 
@@ -267,14 +281,27 @@ const defaultConfig: WardrobeConfig = {
 };
 
 const defaultRoom: RoomSettings = {
-  wallColor: "#e8e6e2",
+  wallColor: "#b8c4c8",
   floorStyle: "laminate-soft-beige",
+  roomWidthM: 3,
+  roomDepthM: 3,
+  roomHeightM: 2.8,
+  spaceLayoutPreset: "linear",
+  walkInVariant: "u",
+  bridgeLiftCm: WARDROBE_BRIDGE_LIFT_DEFAULT_CM,
+  wardrobeCornerAttachment: "left",
 };
 
 function normalizeWardrobeRoom(room?: RoomSettings): RoomSettings {
   const r = { ...defaultRoom, ...(room ?? {}) };
-  r.floorStyle = "laminate-soft-beige";
-  return r;
+  const surf = normalizePlannerFloorSurfaceFields(r);
+  const interior = normalizePlannerWallCeilingSurfaceFields(r);
+  return normalizeSpaceLayoutFields({
+    ...r,
+    ...surf,
+    ...interior,
+    floorStyle: normalizeFloorStyle(r.floorStyle),
+  });
 }
 
 function normalizeFrameDimensions(config: WardrobeConfig): WardrobeConfig {
@@ -317,9 +344,8 @@ function normalizeDoorConfig(config: WardrobeConfig): WardrobeConfig {
   const slidingMechanismId =
     typeof raw.slidingMechanismId === "string" ? raw.slidingMechanismId : INTERNAL_RENDER_FALLBACK.id;
 
-  const sectionCount = config.sections.length;
   const frameW = config.frame.width;
-  const targetLen = wardrobeDoorPanelMaterialIdsLength(raw.type, frameW, sectionCount);
+  const targetLen = wardrobeDoorPanelMaterialIdsLength(raw.type, frameW, config.sections);
 
   let prevIds: string[] = [];
   if (Array.isArray(raw.doorPanelMaterialIds) && raw.doorPanelMaterialIds.length > 0) {
@@ -329,22 +355,20 @@ function normalizeDoorConfig(config: WardrobeConfig): WardrobeConfig {
     prevIds = targetLen > 0 ? Array.from({ length: targetLen }, () => matForLegacyType) : [];
   }
 
-  const doorPanelMaterialIds = resizeDoorPanelMaterialIds(
-    prevIds,
-    targetLen,
-    INTERNAL_RENDER_FALLBACK.id,
-  );
+  const doorPanelMaterialIds =
+    raw.type === "hinged"
+      ? normalizeHingedDoorPanelMaterialIds(prevIds, config.sections, INTERNAL_RENDER_FALLBACK.id)
+      : resizeDoorPanelMaterialIds(prevIds, targetLen, INTERNAL_RENDER_FALLBACK.id);
 
   const baseGrain = config.doorGrainDirection ?? "horizontal";
   let prevGrains: GrainDirection[] = [];
   if (Array.isArray(raw.doorPanelGrainDirections)) {
     prevGrains = raw.doorPanelGrainDirections.filter(isGrainDirection);
   }
-  const doorPanelGrainDirections = resizeDoorPanelGrainDirections(
-    prevGrains,
-    targetLen,
-    baseGrain,
-  );
+  const doorPanelGrainDirections =
+    raw.type === "hinged"
+      ? normalizeHingedDoorPanelGrainDirections(prevGrains, config.sections, baseGrain)
+      : resizeDoorPanelGrainDirections(prevGrains, targetLen, baseGrain);
 
   return {
     ...config,
@@ -441,6 +465,8 @@ const defaultUI: WardrobeUIState = {
   showDimensions: true,
   dividerDragActive: false,
   customizeEachDoor: false,
+  linkInteriorExteriorFinishes: false,
+  lengthUnit: "cm",
 };
 
 const persisted = loadFromStorage();
@@ -464,26 +490,59 @@ function persist(
   saveToStorage({
     config,
     room,
-    ui: { showDoors: ui.showDoors, customizeEachDoor: ui.customizeEachDoor },
+    ui: {
+      showDoors: ui.showDoors,
+      customizeEachDoor: ui.customizeEachDoor,
+      linkInteriorExteriorFinishes: ui.linkInteriorExteriorFinishes,
+      lengthUnit: ui.lengthUnit,
+    },
     wardrobeSheetSizeOverrideCm: wardrobeSheetSizeOverrideCm ?? undefined,
   });
 }
 
-type SetFn = (partial: Partial<WardrobeState> | ((s: WardrobeState) => Partial<WardrobeState>)) => void;
 type GetFn = () => WardrobeState;
 
-function pushHistory(set: SetFn, get: GetFn, newConfig: WardrobeConfig) {
-  const s = get();
+/** JSON round-trip; wardrobe config is plain data (localStorage-safe). */
+function cloneConfigForHistory(c: WardrobeConfig): WardrobeConfig {
+  return JSON.parse(JSON.stringify(c)) as WardrobeConfig;
+}
+
+let persistRafId: number | null = null;
+
+/** Batches writes and runs after paint so interaction (e.g. shelf reorder) stays responsive. */
+function schedulePersistFromGet(get: GetFn) {
+  if (persistRafId !== null) {
+    cancelAnimationFrame(persistRafId);
+  }
+  persistRafId = requestAnimationFrame(() => {
+    persistRafId = null;
+    const st = get();
+    persist(st.config, st.room, st.ui, st.wardrobeSheetSizeOverrideCm);
+  });
+}
+
+function cloneRoom(room: RoomSettings): RoomSettings {
+  return JSON.parse(JSON.stringify(room)) as RoomSettings;
+}
+
+function appendHistoryEntry(
+  s: WardrobeState,
+  nextConfig: WardrobeConfig,
+  nextRoom: RoomSettings,
+): Pick<WardrobeState, "history" | "historyIndex" | "canUndo" | "canRedo"> {
   const newHistory = s.history.slice(0, s.historyIndex + 1);
-  newHistory.push(structuredClone(newConfig));
+  newHistory.push({
+    config: cloneConfigForHistory(nextConfig),
+    room: cloneRoom(nextRoom),
+  });
   if (newHistory.length > MAX_HISTORY) newHistory.shift();
   const newIndex = newHistory.length - 1;
-  set({
+  return {
     history: newHistory,
     historyIndex: newIndex,
     canUndo: newIndex > 0,
     canRedo: false,
-  });
+  };
 }
 
 export const useWardrobeStore = create<WardrobeState>()(
@@ -497,6 +556,9 @@ export const useWardrobeStore = create<WardrobeState>()(
         ...defaultUI,
         showDoors: persisted?.ui?.showDoors ?? defaultUI.showDoors,
         customizeEachDoor: persisted?.ui?.customizeEachDoor ?? defaultUI.customizeEachDoor,
+        linkInteriorExteriorFinishes:
+          persisted?.ui?.linkInteriorExteriorFinishes ?? defaultUI.linkInteriorExteriorFinishes,
+        lengthUnit: normalizeLengthUnit(persisted?.ui?.lengthUnit),
       },
       availableMaterials: [],
       availableDoorMaterials: [],
@@ -507,7 +569,12 @@ export const useWardrobeStore = create<WardrobeState>()(
       sheetManualExtraSheetsByMaterial: {},
       wardrobeSheetSizeOverrideCm: persisted?.wardrobeSheetSizeOverrideCm ?? null,
 
-      history: [structuredClone(initialConfig)],
+      history: [
+        {
+          config: cloneConfigForHistory(initialConfig),
+          room: cloneRoom(initialRoom),
+        },
+      ],
       historyIndex: 0,
       canUndo: false,
       canRedo: false,
@@ -518,6 +585,33 @@ export const useWardrobeStore = create<WardrobeState>()(
           availableDoorMaterials: door,
           availableSlidingMechanisms: slidingMechanisms,
           availableHandleMaterials: handleMaterials,
+        }),
+
+      mergeCatalogMaterialsIntoPools: (rows: WardrobeMaterial[]) =>
+        set(() => {
+          if (rows.length === 0) return {};
+          const s = get();
+          const fm = [...s.availableMaterials];
+          const dm = [...s.availableDoorMaterials];
+          const fSeen = new Set(fm.map((x) => x.id));
+          const dSeen = new Set(dm.map((x) => x.id));
+          for (const row of rows) {
+            if (wardrobeManufacturerRowForFramePool(row) && !fSeen.has(row.id)) {
+              fm.push(row);
+              fSeen.add(row.id);
+            }
+            if (wardrobeManufacturerRowForDoorPool(row) && !dSeen.has(row.id)) {
+              dm.push(row);
+              dSeen.add(row.id);
+            }
+          }
+          return { availableMaterials: fm, availableDoorMaterials: dm };
+        }),
+
+      setConfigForHydrate: (config: WardrobeConfig) =>
+        set(() => {
+          schedulePersistFromGet(get);
+          return { config };
         }),
 
       setSheetPlacementOverrides: (update) =>
@@ -538,8 +632,8 @@ export const useWardrobeStore = create<WardrobeState>()(
         })),
 
       setWardrobeSheetSizeOverride: (value) =>
-        set((s) => {
-          persist(s.config, s.room, s.ui, value);
+        set(() => {
+          schedulePersistFromGet(get);
           return {
             wardrobeSheetSizeOverrideCm: value,
             sheetPlacementOverrides: {},
@@ -554,10 +648,9 @@ export const useWardrobeStore = create<WardrobeState>()(
           const width = Math.round(Math.min(FRAME_MAX_WIDTH, Math.max(FRAME_MIN_WIDTH, w)));
           const frame = { ...s.config.frame, width };
           const sections = redistributeSections(s.config.sections, frame.width);
-          let config = syncDoorPanelArrays({ ...s.config, frame, sections });
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          const config = syncDoorPanelArrays({ ...s.config, frame, sections });
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setFrameHeight: (h) =>
@@ -565,9 +658,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           const height = Math.round(Math.min(FRAME_MAX_HEIGHT, Math.max(FRAME_MIN_HEIGHT, h)));
           const frame = { ...s.config.frame, height };
           const config = { ...s.config, frame };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setFrameDepth: (d) =>
@@ -575,18 +667,16 @@ export const useWardrobeStore = create<WardrobeState>()(
           const depth = Math.round(Math.min(FRAME_MAX_DEPTH, Math.max(FRAME_MIN_DEPTH, d)));
           const frame = { ...s.config.frame, depth };
           const config = { ...s.config, frame };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setWardrobeBaseType: (type: WardrobeBaseType) =>
         set((s) => {
           const base = clampWardrobeBase({ ...s.config.base, type });
           const config = { ...s.config, base };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setWardrobeLegHeightCm: (cm) =>
@@ -594,9 +684,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           const legHeightCm = Math.round(Math.min(LEG_HEIGHT_MAX, Math.max(LEG_HEIGHT_MIN, cm)));
           const base = clampWardrobeBase({ ...s.config.base, type: "legs", legHeightCm });
           const config = { ...s.config, base };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setWardrobePlinthHeightCm: (cm) =>
@@ -606,9 +695,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           );
           const base = clampWardrobeBase({ ...s.config.base, type: "plinth", plinthHeightCm });
           const config = { ...s.config, base };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setWardrobePlinthRecessCm: (cm) =>
@@ -617,9 +705,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             Math.round(Math.min(PLINTH_RECESS_MAX, Math.max(PLINTH_RECESS_MIN, cm)) * 10) / 10;
           const base = clampWardrobeBase({ ...s.config.base, type: "plinth", plinthRecessCm });
           const config = { ...s.config, base };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       // ── Sections ──
@@ -629,9 +716,12 @@ export const useWardrobeStore = create<WardrobeState>()(
           const clamped = Math.max(1, Math.min(6, count));
           const sections = makeSections(s.config.frame.width, clamped);
           const config = syncDoorPanelArrays({ ...s.config, sections });
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config, ui: { ...s.ui, selectedSectionId: null, selectedComponentId: null } };
+          schedulePersistFromGet(get);
+          return {
+            config,
+            ui: { ...s.ui, selectedSectionId: null, selectedComponentId: null },
+            ...appendHistoryEntry(s, config, s.room),
+          };
         }),
 
       setSectionWidth: (sectionId, width) =>
@@ -640,9 +730,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           if (idx < 0) return s;
           const sections = setSectionWidthsWithRemainder(s.config.sections, s.config.frame.width, idx, width);
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       adjustSectionDivider: (dividerIndex, newLeftWidthCm) =>
@@ -660,8 +749,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           );
           const config = { ...s.config, sections };
           if (!s.ui.dividerDragActive) {
-            persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-            pushHistory(set, get, config);
+            schedulePersistFromGet(get);
+            return { config, ...appendHistoryEntry(s, config, s.room) };
           }
           return { config };
         }),
@@ -669,8 +758,11 @@ export const useWardrobeStore = create<WardrobeState>()(
       setDividerDragActive: (active) =>
         set((s) => {
           if (!active && s.ui.dividerDragActive) {
-            persist(s.config, s.room, { ...s.ui, dividerDragActive: false }, s.wardrobeSheetSizeOverrideCm);
-            pushHistory(set, get, s.config);
+            schedulePersistFromGet(get);
+            return {
+              ui: { ...s.ui, dividerDragActive: active },
+              ...appendHistoryEntry(s, s.config, s.room),
+            };
           }
           return { ui: { ...s.ui, dividerDragActive: active } };
         }),
@@ -681,9 +773,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             sec.id === sectionId ? { ...sec, hingedDoorHandleSide: side } : sec,
           );
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setSectionHingedDoorCount: (sectionId, count) =>
@@ -692,10 +783,12 @@ export const useWardrobeStore = create<WardrobeState>()(
           const sections = s.config.sections.map((sec) =>
             sec.id === sectionId ? { ...sec, hingedDoorCount } : sec,
           );
-          const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          let config: WardrobeConfig = { ...s.config, sections };
+          if (config.doors.type === "hinged") {
+            config = syncDoorPanelArrays(config);
+          }
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       // ── Components ──
@@ -736,9 +829,12 @@ export const useWardrobeStore = create<WardrobeState>()(
               : sec
           );
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config, ui: { ...s.ui, selectedComponentId: comp.id } };
+          schedulePersistFromGet(get);
+          return {
+            config,
+            ui: { ...s.ui, selectedComponentId: comp.id },
+            ...appendHistoryEntry(s, config, s.room),
+          };
         }),
 
       duplicateComponent: (sectionId, componentId) =>
@@ -784,9 +880,12 @@ export const useWardrobeStore = create<WardrobeState>()(
               : sec
           );
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config, ui: { ...s.ui, selectedComponentId: dup.id } };
+          schedulePersistFromGet(get);
+          return {
+            config,
+            ui: { ...s.ui, selectedComponentId: dup.id },
+            ...appendHistoryEntry(s, config, s.room),
+          };
         }),
 
       removeComponent: (sectionId, componentId) =>
@@ -799,8 +898,7 @@ export const useWardrobeStore = create<WardrobeState>()(
             return { ...sec, components };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
+          schedulePersistFromGet(get);
           return {
             config,
             ui: {
@@ -808,6 +906,7 @@ export const useWardrobeStore = create<WardrobeState>()(
               selectedComponentId:
                 s.ui.selectedComponentId === componentId ? null : s.ui.selectedComponentId,
             },
+            ...appendHistoryEntry(s, config, s.room),
           };
         }),
 
@@ -841,8 +940,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           // "interactive manipulation in progress"), skip history / persist.
           // `setDividerDragActive(false)` at drag-end commits one snapshot.
           if (!s.ui.dividerDragActive) {
-            persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-            pushHistory(set, get, config);
+            schedulePersistFromGet(get);
+            return { config, ...appendHistoryEntry(s, config, s.room) };
           }
           return { config };
         }),
@@ -873,9 +972,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             sec.id === sectionId ? { ...sec, components } : sec,
           );
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setComponentGrainDirection: (sectionId, componentId, direction) =>
@@ -890,9 +988,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setComponentYPosition: (sectionId, componentId, yCm) =>
@@ -919,9 +1016,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             return { ...sec, components };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setComponentHeight: (sectionId, componentId, heightCm) =>
@@ -950,9 +1046,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             return { ...sec, components };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setShelfWidthCm: (sectionId, componentId, widthCm) =>
@@ -970,9 +1065,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             return { ...sec, components };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setShelfDepthCm: (sectionId, componentId, depthCm) =>
@@ -995,9 +1089,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             return { ...sec, components };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setShelfDepthPlacement: (
@@ -1016,9 +1109,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             return { ...sec, components };
           });
           const config = { ...s.config, sections };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setInteriorStackGapCm: (cm) =>
@@ -1026,9 +1118,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           const interiorStackGapCm =
             Math.round(Math.min(15, Math.max(0, cm)) * 10) / 10;
           const config = { ...s.config, interiorStackGapCm };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       // ── Doors ──
@@ -1041,18 +1132,32 @@ export const useWardrobeStore = create<WardrobeState>()(
           const targetLen = wardrobeDoorPanelMaterialIdsLength(
             type,
             s.config.frame.width,
-            s.config.sections.length,
+            s.config.sections,
           );
-          const doorPanelMaterialIds = resizeDoorPanelMaterialIds(
-            prevForResize,
-            targetLen,
-            INTERNAL_RENDER_FALLBACK.id,
-          );
-          const doorPanelGrainDirections = resizeDoorPanelGrainDirections(
-            s.config.doors.doorPanelGrainDirections ?? [],
-            targetLen,
-            s.config.doorGrainDirection ?? "horizontal",
-          );
+          const doorPanelMaterialIds =
+            type === "hinged"
+              ? normalizeHingedDoorPanelMaterialIds(
+                  prevForResize,
+                  s.config.sections,
+                  INTERNAL_RENDER_FALLBACK.id,
+                )
+              : resizeDoorPanelMaterialIds(
+                  prevForResize,
+                  targetLen,
+                  INTERNAL_RENDER_FALLBACK.id,
+                );
+          const doorPanelGrainDirections =
+            type === "hinged"
+              ? normalizeHingedDoorPanelGrainDirections(
+                  s.config.doors.doorPanelGrainDirections ?? [],
+                  s.config.sections,
+                  s.config.doorGrainDirection ?? "horizontal",
+                )
+              : resizeDoorPanelGrainDirections(
+                  s.config.doors.doorPanelGrainDirections ?? [],
+                  targetLen,
+                  s.config.doorGrainDirection ?? "horizontal",
+                );
           // Sliding doors default to no handle (recessed edge pulls are typical);
           // switching back to hinged from the sliding default restores a visible handle.
           const prevHandle = s.config.doors.handle;
@@ -1065,9 +1170,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           const doors = { ...s.config.doors, type, doorPanelMaterialIds, doorPanelGrainDirections, handle };
           if (type === "sliding") doors.handleMaterialId = undefined;
           const config = { ...s.config, doors };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setAllDoorPanelMaterials: (materialId) =>
@@ -1075,7 +1179,7 @@ export const useWardrobeStore = create<WardrobeState>()(
           const len = wardrobeDoorPanelMaterialIdsLength(
             s.config.doors.type,
             s.config.frame.width,
-            s.config.sections.length,
+            s.config.sections,
           );
           const doorPanelMaterialIds = Array.from({ length: len }, () => materialId);
           const g = s.config.doorGrainDirection ?? "horizontal";
@@ -1084,9 +1188,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             ...s.config,
             doors: { ...s.config.doors, doorPanelMaterialIds, doorPanelGrainDirections },
           };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setDoorPanelMaterial: (panelIndex, materialId) =>
@@ -1095,9 +1198,8 @@ export const useWardrobeStore = create<WardrobeState>()(
           if (panelIndex < 0 || panelIndex >= ids.length) return s;
           ids[panelIndex] = materialId;
           const config = { ...s.config, doors: { ...s.config.doors, doorPanelMaterialIds: ids } };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setDoorPanelGrainDirection: (panelIndex, direction) =>
@@ -1106,17 +1208,15 @@ export const useWardrobeStore = create<WardrobeState>()(
           if (panelIndex < 0 || panelIndex >= grains.length) return s;
           grains[panelIndex] = direction;
           const config = { ...s.config, doors: { ...s.config.doors, doorPanelGrainDirections: grains } };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setSlidingMechanism: (materialId) =>
         set((s) => {
           const config = { ...s.config, doors: { ...s.config.doors, slidingMechanismId: materialId } };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setDoorHandle: (handle) =>
@@ -1124,18 +1224,16 @@ export const useWardrobeStore = create<WardrobeState>()(
           const doors = { ...s.config.doors, handle };
           if (handle === "none") doors.handleMaterialId = undefined;
           const config = { ...s.config, doors };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setDoorHandleMaterial: (materialId) =>
         set((s) => {
           const doors = { ...s.config.doors, handleMaterialId: materialId };
           const config = { ...s.config, doors };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       // ── Materials ──
@@ -1143,33 +1241,66 @@ export const useWardrobeStore = create<WardrobeState>()(
       setFrameMaterial: (materialId) =>
         set((s) => {
           const config = { ...s.config, frameMaterial: materialId };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setInteriorMaterial: (materialId) =>
         set((s) => {
           const config = { ...s.config, interiorMaterial: materialId };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
+        }),
+
+      setExteriorMaterial: (materialId) =>
+        set((s) => {
+          const doorsCfg = s.config.doors;
+          if (doorsCfg.type === "none") {
+            const config = { ...s.config, frameMaterial: materialId };
+            schedulePersistFromGet(get);
+            return {
+              config,
+              ui: { ...s.ui, customizeEachDoor: false },
+              ...appendHistoryEntry(s, config, s.room),
+            };
+          }
+          const len = wardrobeDoorPanelMaterialIdsLength(
+            doorsCfg.type,
+            s.config.frame.width,
+            s.config.sections,
+          );
+          const g = s.config.doorGrainDirection ?? s.config.frameGrainDirection ?? "horizontal";
+          const doorPanelMaterialIds = Array.from({ length: len }, () => materialId);
+          const doorPanelGrainDirections = Array.from({ length: len }, () => g);
+          const config = {
+            ...s.config,
+            frameMaterial: materialId,
+            doors: {
+              ...doorsCfg,
+              doorPanelMaterialIds,
+              doorPanelGrainDirections,
+            },
+          };
+          schedulePersistFromGet(get);
+          return {
+            config,
+            ui: { ...s.ui, customizeEachDoor: false },
+            ...appendHistoryEntry(s, config, s.room),
+          };
         }),
 
       setFrameGrainDirection: (direction) =>
         set((s) => {
           const config = { ...s.config, frameGrainDirection: direction };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setInteriorGrainDirection: (direction) =>
         set((s) => {
           const config = { ...s.config, interiorGrainDirection: direction };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setDoorGrainDirection: (direction) =>
@@ -1185,7 +1316,7 @@ export const useWardrobeStore = create<WardrobeState>()(
           const len = wardrobeDoorPanelMaterialIdsLength(
             s.config.doors.type,
             s.config.frame.width,
-            s.config.sections.length,
+            s.config.sections,
           );
           const doorPanelGrainDirections = Array.from({ length: len }, () => direction);
           const config = {
@@ -1194,9 +1325,38 @@ export const useWardrobeStore = create<WardrobeState>()(
             sections,
             doors: { ...s.config.doors, doorPanelGrainDirections },
           };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
+        }),
+
+      setExteriorGrainDirection: (direction) =>
+        set((s) => {
+          const sections = s.config.sections.map((sec) => ({
+            ...sec,
+            components: sec.components.map((c) => {
+              if (c.type !== "drawer" || c.grainDirection === undefined) return c;
+              const { grainDirection: _removed, ...rest } = c;
+              return rest as WardrobeComponent;
+            }),
+          }));
+          const len = wardrobeDoorPanelMaterialIdsLength(
+            s.config.doors.type,
+            s.config.frame.width,
+            s.config.sections,
+          );
+          const doorPanelGrainDirections =
+            len > 0
+              ? Array.from({ length: len }, () => direction)
+              : (s.config.doors.doorPanelGrainDirections ?? []);
+          const config = {
+            ...s.config,
+            frameGrainDirection: direction,
+            doorGrainDirection: direction,
+            sections,
+            doors: { ...s.config.doors, doorPanelGrainDirections },
+          };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       // ── Room ──
@@ -1204,14 +1364,108 @@ export const useWardrobeStore = create<WardrobeState>()(
       setWallColor: (color) =>
         set((s) => {
           const room = { ...s.room, wallColor: color };
-          persist(s.config, room, s.ui, s.wardrobeSheetSizeOverrideCm);
+          schedulePersistFromGet(get);
           return { room };
         }),
 
       setFloorStyle: (style) =>
         set((s) => {
-          const room = { ...s.room, floorStyle: style };
-          persist(s.config, room, s.ui, s.wardrobeSheetSizeOverrideCm);
+          const room = normalizeWardrobeRoom({ ...s.room, floorStyle: style });
+          schedulePersistFromGet(get);
+          return { room };
+        }),
+
+      setPlannerFloorSurface: (patch) =>
+        set((s) => {
+          const room = normalizeWardrobeRoom({ ...s.room, ...patch });
+          schedulePersistFromGet(get);
+          return { room };
+        }),
+
+      setPlannerWallCeilingSurface: (patch) =>
+        set((s) => {
+          const room = normalizeWardrobeRoom({ ...s.room, ...patch });
+          schedulePersistFromGet(get);
+          return { room };
+        }),
+
+      setSpaceLayoutPreset: (preset: WardrobeSpaceLayoutPreset) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, spaceLayoutPreset: preset });
+          schedulePersistFromGet(get);
+          return {
+            room,
+            sheetPlacementOverrides: {},
+            ...appendHistoryEntry(s, s.config, room),
+          };
+        }),
+
+      setWalkInVariant: (variant: WardrobeWalkInVariant) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, walkInVariant: variant });
+          schedulePersistFromGet(get);
+          return {
+            room,
+            sheetPlacementOverrides: {},
+            ...appendHistoryEntry(s, s.config, room),
+          };
+        }),
+
+      setBridgeLiftCm: (cm: number) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, bridgeLiftCm: cm });
+          schedulePersistFromGet(get);
+          return { room, ...appendHistoryEntry(s, s.config, room) };
+        }),
+
+      setRoomWidthM: (widthM: number) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, roomWidthM: widthM });
+          schedulePersistFromGet(get);
+          return {
+            room,
+            sheetPlacementOverrides: {},
+            ...appendHistoryEntry(s, s.config, room),
+          };
+        }),
+
+      setRoomDepthM: (depthM: number) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, roomDepthM: depthM });
+          schedulePersistFromGet(get);
+          return {
+            room,
+            sheetPlacementOverrides: {},
+            ...appendHistoryEntry(s, s.config, room),
+          };
+        }),
+
+      setRoomHeightM: (heightM: number) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, roomHeightM: heightM });
+          schedulePersistFromGet(get);
+          return {
+            room,
+            sheetPlacementOverrides: {},
+            ...appendHistoryEntry(s, s.config, room),
+          };
+        }),
+
+      setWardrobeCornerAttachment: (attachment: WardrobeCornerAttachment) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, wardrobeCornerAttachment: attachment });
+          schedulePersistFromGet(get);
+          return {
+            room,
+            sheetPlacementOverrides: {},
+            ...appendHistoryEntry(s, s.config, room),
+          };
+        }),
+
+      setWardrobePrimaryRun: (run: WardrobePrimaryRun | undefined) =>
+        set((s) => {
+          const room = normalizeSpaceLayoutFields({ ...s.room, wardrobePrimaryRun: run });
+          schedulePersistFromGet(get);
           return { room };
         }),
 
@@ -1226,21 +1480,28 @@ export const useWardrobeStore = create<WardrobeState>()(
       toggleDoors: () =>
         set((s) => {
           const ui = { ...s.ui, showDoors: !s.ui.showDoors };
-          persist(s.config, s.room, ui, s.wardrobeSheetSizeOverrideCm);
+          schedulePersistFromGet(get);
           return { ui };
         }),
 
       setCustomizeEachDoor: (on) =>
         set((s) => {
           const ui = { ...s.ui, customizeEachDoor: on };
-          persist(s.config, s.room, ui, s.wardrobeSheetSizeOverrideCm);
+          schedulePersistFromGet(get);
+          return { ui };
+        }),
+
+      setLinkInteriorExteriorFinishes: (on) =>
+        set((s) => {
+          const ui = { ...s.ui, linkInteriorExteriorFinishes: on };
+          schedulePersistFromGet(get);
           return { ui };
         }),
 
       setViewMode: (mode) =>
         set((s) => {
           const ui = { ...s.ui, viewMode: mode };
-          persist(s.config, s.room, ui, s.wardrobeSheetSizeOverrideCm);
+          schedulePersistFromGet(get);
           return { ui };
         }),
 
@@ -1253,16 +1514,26 @@ export const useWardrobeStore = create<WardrobeState>()(
       toggleDimensions: () =>
         set((s) => ({ ui: { ...s.ui, showDimensions: !s.ui.showDimensions } })),
 
+      setLengthUnit: (unit) =>
+        set((s) => {
+          const ui = { ...s.ui, lengthUnit: normalizeLengthUnit(unit) };
+          schedulePersistFromGet(get);
+          return { ui };
+        }),
+
       // ── Undo / Redo ──
 
       undo: () =>
         set((s) => {
           if (s.historyIndex <= 0) return s;
           const newIndex = s.historyIndex - 1;
-          const config = structuredClone(s.history[newIndex]);
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
+          const entry = s.history[newIndex]!;
+          const config = cloneConfigForHistory(entry.config);
+          const room = cloneRoom(entry.room);
+          schedulePersistFromGet(get);
           return {
             config,
+            room,
             historyIndex: newIndex,
             canUndo: newIndex > 0,
             canRedo: true,
@@ -1273,10 +1544,13 @@ export const useWardrobeStore = create<WardrobeState>()(
         set((s) => {
           if (s.historyIndex >= s.history.length - 1) return s;
           const newIndex = s.historyIndex + 1;
-          const config = structuredClone(s.history[newIndex]);
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
+          const entry = s.history[newIndex]!;
+          const config = cloneConfigForHistory(entry.config);
+          const room = cloneRoom(entry.room);
+          schedulePersistFromGet(get);
           return {
             config,
+            room,
             historyIndex: newIndex,
             canUndo: true,
             canRedo: newIndex < s.history.length - 1,
@@ -1290,14 +1564,16 @@ export const useWardrobeStore = create<WardrobeState>()(
           const config = normalizeFrameDimensions(
             normalizeDoorConfig(normalizeBaseConfig(structuredClone(templateConfig))),
           );
-          persist(config, s.room, s.ui, null);
-          pushHistory(set, get, config);
+          const room = normalizeSpaceLayoutFields({ ...defaultRoom });
+          schedulePersistFromGet(get);
           return {
             config,
+            room,
             sheetPlacementOverrides: {},
             sheetManualExtraSheetsByMaterial: {},
             wardrobeSheetSizeOverrideCm: null,
             ui: { ...s.ui, showTemplates: false, selectedSectionId: null, selectedComponentId: null },
+            ...appendHistoryEntry(s, config, room),
           };
         }),
 
@@ -1314,9 +1590,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             addons: [...existing, { id: nextId, position }],
             seamStyle: s.config.seamStyle ?? "independent",
           };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       removeWardrobeAddon: (id) =>
@@ -1326,17 +1601,15 @@ export const useWardrobeStore = create<WardrobeState>()(
             ...s.config,
             addons: existing.filter((a) => a.id !== id),
           };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setSeamStyle: (style) =>
         set((s) => {
           const config: WardrobeConfig = { ...s.config, seamStyle: style };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       setPanelFrontOverride: (panelId, isFront) =>
@@ -1351,9 +1624,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             next[panelId] = isFront;
           }
           const config: WardrobeConfig = { ...s.config, panelFrontOverrides: next };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       clearPanelFrontOverrides: () =>
@@ -1362,9 +1634,8 @@ export const useWardrobeStore = create<WardrobeState>()(
             return s;
           }
           const config: WardrobeConfig = { ...s.config, panelFrontOverrides: {} };
-          persist(config, s.room, s.ui, s.wardrobeSheetSizeOverrideCm);
-          pushHistory(set, get, config);
-          return { config };
+          schedulePersistFromGet(get);
+          return { config, ...appendHistoryEntry(s, config, s.room) };
         }),
 
       // ── Reset ──
@@ -1372,14 +1643,15 @@ export const useWardrobeStore = create<WardrobeState>()(
       resetConfig: () => {
         localStorage.removeItem(STORAGE_KEY);
         const freshConfig = { ...defaultConfig, sections: makeSections(defaultConfig.frame.width, 2) };
+        const freshRoom = normalizeSpaceLayoutFields({ ...defaultRoom });
         set({
           config: freshConfig,
-          room: { ...defaultRoom },
+          room: freshRoom,
           ui: { ...defaultUI },
           sheetPlacementOverrides: {},
           sheetManualExtraSheetsByMaterial: {},
           wardrobeSheetSizeOverrideCm: null,
-          history: [structuredClone(freshConfig)],
+          history: [{ config: cloneConfigForHistory(freshConfig), room: cloneRoom(freshRoom) }],
           historyIndex: 0,
           canUndo: false,
           canRedo: false,

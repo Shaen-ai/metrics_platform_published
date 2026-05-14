@@ -1,198 +1,28 @@
 "use client";
 
-import { useRef, useCallback, useEffect, useState, Suspense } from "react";
+import { useRef, useCallback, useEffect, useState, Suspense, type ComponentRef, type MutableRefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { usePlannerStore } from "../store/usePlannerStore";
-import { computeDragPosition } from "../utils/math";
+import { usePlannerType } from "../context";
 import RoomMesh from "../scene/RoomMesh";
 import RoomCornerLabels from "../scene/RoomCornerLabels";
 import FurnitureMesh from "../scene/FurnitureMesh";
 import ItemDistanceAnnotations from "../scene/ItemDistanceAnnotations";
+import { PlacementDragController } from "@/hooks/useDragAndDrop";
 // FloorGrid removed — wooden floor uses realistic plank texture only
 
-const DEG15 = (15 * Math.PI) / 180;
-
-// ─── Drag controller using native DOM events ────────────────────────
-// R3F's onPointerDown on meshes is unreliable with OrbitControls.
-// Instead we attach native pointerdown/move/up to the <canvas> element
-// and do our own raycasting.  This is the same pattern IKEA uses.
-
-function DragController({
-  controlsRef,
-}: {
-  controlsRef: React.MutableRefObject<any>;
-}) {
-  const { camera, scene, gl, invalidate } = useThree();
-  const raycaster = useRef(new THREE.Raycaster());
-  const pointer = useRef(new THREE.Vector2());
-  const dragOffset = useRef({ x: 0, z: 0 });
-  const floorPlane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)); // Y=0
-
-  // Helper: get the canvas-relative NDC from a DOM PointerEvent
-  const getNDC = useCallback(
-    (e: PointerEvent) => {
-      const rect = gl.domElement.getBoundingClientRect();
-      pointer.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    },
-    [gl]
-  );
-
-  // Helper: intersect a point on the Y=0 floor plane
-  const hitFloor = useCallback((): THREE.Vector3 | null => {
-    raycaster.current.setFromCamera(pointer.current, camera);
-    const target = new THREE.Vector3();
-    const hit = raycaster.current.ray.intersectPlane(floorPlane.current, target);
-    return hit;
-  }, [camera]);
-
-  // Helper: find the first furniture mesh under the pointer
-  const hitFurniture = useCallback((): string | null => {
-    raycaster.current.setFromCamera(pointer.current, camera);
-    // Collect all meshes that have a userData.itemId
-    const meshes: THREE.Mesh[] = [];
-    scene.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh && obj.userData?.itemId) {
-        meshes.push(obj as THREE.Mesh);
-      }
-    });
-    const hits = raycaster.current.intersectObjects(meshes, false);
-    if (hits.length > 0) {
-      return hits[0].object.userData.itemId as string;
-    }
-    return null;
-  }, [camera, scene]);
-
-  useEffect(() => {
-    const canvas = gl.domElement;
-
-    const onPointerDown = (e: PointerEvent) => {
-      // Only handle left mouse button
-      if (e.button !== 0) return;
-
-      getNDC(e);
-
-      const itemId = hitFurniture();
-
-      if (itemId) {
-        // ── Select and start drag ──
-        e.stopPropagation();
-        e.preventDefault();
-
-        const store = usePlannerStore.getState();
-        
-        // Select the item first (for visual feedback)
-        store.selectItem(itemId);
-        
-        const item = store.placedItems.find((i) => i.id === itemId);
-        if (!item) return;
-
-        // Locked items can be selected but not dragged
-        if (item.movable === false) return;
-
-        // Compute grab offset so item doesn't jump
-        const floor = hitFloor();
-        if (floor) {
-          dragOffset.current = {
-            x: floor.x - item.position.x,
-            z: floor.z - item.position.z,
-          };
-        } else {
-          dragOffset.current = { x: 0, z: 0 };
-        }
-
-        // Disable OrbitControls immediately
-        if (controlsRef.current) {
-          controlsRef.current.enabled = false;
-        }
-
-        // Visual feedback: change cursor
-        canvas.style.cursor = "grabbing";
-
-        store.startDrag(itemId);
-      } else {
-        // Clicked on empty space → deselect
-        usePlannerStore.getState().selectItem(null);
-      }
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-      const store = usePlannerStore.getState();
-
-      // Change cursor on hover over furniture (when not dragging)
-      if (!store.isDragging) {
-        getNDC(e);
-        const hoveredId = hitFurniture();
-        if (hoveredId) {
-          const hovered = store.placedItems.find((i) => i.id === hoveredId);
-          canvas.style.cursor = hovered?.movable === false ? "not-allowed" : "grab";
-        } else {
-          canvas.style.cursor = "";
-        }
-        return;
-      }
-
-      if (!store.dragItemId) return;
-
-      getNDC(e);
-      const floor = hitFloor();
-      if (!floor) return;
-
-      const { x, z } = computeDragPosition(
-        floor.x,
-        floor.z,
-        dragOffset.current.x,
-        dragOffset.current.z
-      );
-      store.updateItemPosition(store.dragItemId, x, z);
-      // Trigger a Three.js re-render so shadow updates in real time
-      invalidate();
-    };
-
-    const onPointerUp = () => {
-      const store = usePlannerStore.getState();
-      if (!store.isDragging) return;
-
-      store.endDrag();
-      invalidate();
-
-      // Reset cursor
-      canvas.style.cursor = "";
-
-      // Re-enable OrbitControls
-      if (controlsRef.current) {
-        controlsRef.current.enabled = true;
-        controlsRef.current.enablePan = true;
-        controlsRef.current.enableRotate =
-          !usePlannerStore.getState().ui.topView;
-        controlsRef.current.enableZoom = true;
-      }
-    };
-
-    // Use capture phase to intercept before OrbitControls
-    canvas.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-
-    return () => {
-      canvas.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-  }, [gl, getNDC, hitFloor, hitFurniture, controlsRef, scene, invalidate]);
-
-  return null; // this component renders nothing
-}
+type PlannerOrbitControls = ComponentRef<typeof OrbitControls>;
 
 // ─── Camera controller ──────────────────────────────────────────────
 
 function CameraController({
   controlsRef,
 }: {
-  controlsRef: React.MutableRefObject<any>;
+  controlsRef: MutableRefObject<PlannerOrbitControls | null>;
 }) {
+  const plannerConfig = usePlannerType();
   const topView = usePlannerStore((s) => s.ui.topView);
   const isDragging = usePlannerStore((s) => s.isDragging);
   const room = usePlannerStore((s) => s.room);
@@ -219,11 +49,13 @@ function CameraController({
       }
     } else {
       // Scale camera position with room so the full room is visible
+      const outdoor = plannerConfig?.id === "outdoor";
+      const span = Math.max(r.width, r.depth);
       let cx = r.width * 0.7;
-      let cy = r.height * 1.4;
+      let cy = outdoor ? Math.max(2.35, span * 0.5) : r.height * 1.4;
       let cz = r.depth * 1.1;
       let tx = 0;
-      const ty = 1.3;
+      const ty = outdoor ? 0.85 : 1.3;
       const tz = 0;
 
       if (showRoomDesigner) {
@@ -244,13 +76,14 @@ function CameraController({
       }
     }
     invalidate();
-  }, [topView, showRoomDesigner, camera, controlsRef, invalidate]);
+  }, [topView, showRoomDesigner, camera, controlsRef, invalidate, plannerConfig?.id]);
 
   return (
     <OrbitControls
       ref={controlsRef}
       makeDefault
       enabled={!isDragging}
+      enableDamping={false}
       enablePan
       enableRotate={!topView}
       maxPolarAngle={topView ? 0 : Math.PI / 2 - 0.05}
@@ -270,10 +103,11 @@ function StoreInvalidator() {
   const placedItems = usePlannerStore((s) => s.placedItems);
   const selectedItemId = usePlannerStore((s) => s.selectedItemId);
   const showDimensions = usePlannerStore((s) => s.ui.showDimensions);
+  const plinthEnabled = usePlannerStore((s) => s.room.plinthEnabled);
 
   useEffect(() => {
     invalidate();
-  }, [placedItems, selectedItemId, showDimensions, invalidate]);
+  }, [placedItems, selectedItemId, showDimensions, plinthEnabled, invalidate]);
 
   return null;
 }
@@ -281,97 +115,33 @@ function StoreInvalidator() {
 // ─── Scene content ──────────────────────────────────────────────────
 
 function SceneContent() {
+  const plannerConfig = usePlannerType();
   const placedItems = usePlannerStore((s) => s.placedItems);
   const catalog = usePlannerStore((s) => s.catalog);
   const selectedItemId = usePlannerStore((s) => s.selectedItemId);
-  const deleteSelected = usePlannerStore((s) => s.deleteSelected);
-  const rotateItem = usePlannerStore((s) => s.rotateItem);
-  const selectItem = usePlannerStore((s) => s.selectItem);
-  const toggleItemMovable = usePlannerStore((s) => s.toggleItemMovable);
-  const toggleShowGrid = usePlannerStore((s) => s.toggleShowGrid);
-  const toggleSnapToGrid = usePlannerStore((s) => s.toggleSnapToGrid);
-  const toggleShowDimensions = usePlannerStore((s) => s.toggleShowDimensions);
-  const setTopView = usePlannerStore((s) => s.setTopView);
-  const topView = usePlannerStore((s) => s.ui.topView);
   const showDimensions = usePlannerStore((s) => s.ui.showDimensions);
   const room = usePlannerStore((s) => s.room);
 
-  const controlsRef = useRef<any>(null);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-
-      switch (e.key) {
-        case "Delete":
-        case "Backspace":
-          deleteSelected();
-          break;
-        case "q":
-        case "Q":
-          if (selectedItemId) rotateItem(selectedItemId, -DEG15);
-          break;
-        case "e":
-        case "E":
-          if (selectedItemId) rotateItem(selectedItemId, DEG15);
-          break;
-        case "t":
-        case "T":
-          setTopView(!topView);
-          break;
-        case "g":
-        case "G":
-          toggleShowGrid();
-          break;
-        case "s":
-        case "S":
-          toggleSnapToGrid();
-          break;
-        case "d":
-        case "D":
-          toggleShowDimensions();
-          break;
-        case "l":
-        case "L":
-          if (selectedItemId) toggleItemMovable(selectedItemId);
-          break;
-        case "Escape":
-          selectItem(null);
-          break;
-      }
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [
-    selectedItemId,
-    deleteSelected,
-    rotateItem,
-    toggleItemMovable,
-    setTopView,
-    topView,
-    toggleShowGrid,
-    toggleSnapToGrid,
-    toggleShowDimensions,
-    selectItem,
-  ]);
+  const controlsRef = useRef<PlannerOrbitControls | null>(null);
 
   return (
     <>
       {/* Invalidate the frame whenever Zustand visual state changes */}
       <StoreInvalidator />
 
-      {/* Soft indoor fill only — room is lit by ceiling point lights in RoomMesh (no sun / no IBL). */}
-      <hemisphereLight args={[0xfff8f0, 0x4a4844, 0.35]} />
-      <ambientLight intensity={0.22} color="#faf8f5" />
+      {/* Indoor: neutral fill + ceiling lights in RoomMesh. Outdoor: sun + sky in OutdoorSpaceMesh. */}
+      {plannerConfig?.id !== "outdoor" && (
+        <>
+          <hemisphereLight args={[0xfff8f0, 0x4a4844, 0.35]} />
+          <ambientLight intensity={0.22} color="#faf8f5" />
+        </>
+      )}
 
       {/* Camera */}
       <CameraController controlsRef={controlsRef} />
 
-      {/* Drag system (native DOM events) */}
-      <DragController controlsRef={controlsRef} />
+      {/* Smart placement drag (walls, floor, ceiling, helpers) */}
+      <PlacementDragController controlsRef={controlsRef} />
 
       {/* Room */}
       <RoomMesh />
@@ -551,6 +321,8 @@ export default function CanvasScene() {
           logarithmicDepthBuffer: true,
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.1,
+          /** Required so `canvas.toDataURL()` / screenshots retain the last frame (WebGL default clears after present). */
+          preserveDrawingBuffer: true,
         }}
         onCreated={({ invalidate }) => invalidate()}
         camera={{

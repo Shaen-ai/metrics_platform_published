@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { useWardrobeStore } from "./store";
 import { calculatePrice } from "./data";
+import {
+  wardrobeLayoutLegCountForConfig,
+  wardrobeLayoutLegWidthsFromConfig,
+} from "./wardrobeSpaceLayout";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
@@ -24,9 +28,14 @@ export default function PriceSummary() {
     () => [...availableMaterials, ...availableDoorMaterials],
     [availableMaterials, availableDoorMaterials]
   );
+  const room = useWardrobeStore((s) => s.room);
   const price = useMemo(
-    () => calculatePrice(config, allMaterials, availableSlidingMechanisms, availableHandleMaterials),
-    [config, allMaterials, availableSlidingMechanisms, availableHandleMaterials],
+    () =>
+      calculatePrice(config, allMaterials, availableSlidingMechanisms, availableHandleMaterials, {
+        layoutLegCount: wardrobeLayoutLegCountForConfig(room, config),
+        layoutLegWidthsCm: wardrobeLayoutLegWidthsFromConfig(room, config),
+      }),
+    [config, allMaterials, availableSlidingMechanisms, availableHandleMaterials, room],
   );
 
   const hasDetails =

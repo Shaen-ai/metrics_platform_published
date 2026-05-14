@@ -1,0 +1,191 @@
+"use client";
+
+import FloorSwatch from "./FloorSwatch";
+import {
+  LAMINATE_OPTIONS,
+  type FloorLayoutPattern,
+  type FloorMaterialMode,
+  type FloorStyle,
+  type FloorTextureStartSide,
+  type PlannerFloorSurfacePatch,
+} from "../types";
+import { CatalogSurfacePicker } from "./CatalogSurfacePicker";
+
+type Props = {
+  presetVariant?: "swatches" | "kitchen-grid";
+  floorStyle: FloorStyle;
+  mode?: FloorMaterialMode;
+  textureUrl?: string;
+  uvRotationDeg?: number;
+  textureStartSide?: FloorTextureStartSide;
+  layoutPattern?: FloorLayoutPattern;
+  tileWcm?: number;
+  tileHcm?: number;
+  groutCm?: number;
+  groutColor?: string;
+  onPresetPick: (style: FloorStyle) => void;
+  onPatch: (patch: PlannerFloorSurfacePatch) => void;
+};
+
+function NumberField({
+  label,
+  value,
+  min,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number | undefined;
+  min?: number;
+  step?: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
+      {label}
+      <input
+        type="number"
+        min={min}
+        step={step}
+        value={value ?? ""}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
+      />
+    </label>
+  );
+}
+
+export function PlannerFloorSurfaceControls({
+  presetVariant = "swatches",
+  floorStyle,
+  mode = "preset",
+  textureUrl,
+  uvRotationDeg,
+  textureStartSide = "left",
+  layoutPattern,
+  tileWcm,
+  tileHcm,
+  groutCm,
+  groutColor,
+  onPresetPick,
+  onPatch,
+}: Props) {
+  const swatchLimit = presetVariant === "kitchen-grid" ? 12 : LAMINATE_OPTIONS.length;
+  const swatches = LAMINATE_OPTIONS.slice(0, swatchLimit);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-1.5">
+        {(["preset", "customImage", "tile"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onPatch({ floorMaterialMode: value })}
+            className={`rounded-md border px-2 py-1.5 text-xs ${
+              mode === value
+                ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
+                : "border-[var(--border)] text-[var(--muted-foreground)]"
+            }`}
+          >
+            {value === "preset" ? "Preset" : value === "customImage" ? "Image" : "Tile"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "preset" ? (
+        <div className={presetVariant === "swatches" ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>
+          {swatches.map((option) => (
+            <FloorSwatch
+              key={option.value}
+              style={option.value}
+              label={option.label}
+              selected={floorStyle === option.value}
+              onClick={() => onPresetPick(option.value)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <CatalogSurfacePicker
+          kind="floor"
+          selectedTextureUrl={textureUrl}
+          onSelect={(selection) =>
+            onPatch({
+              floorMaterialMode: "customImage",
+              floorCustomTextureUrl: selection.textureUrl,
+              floorTextureWidthCm: selection.textureWidthCm,
+              floorTextureHeightCm: selection.textureHeightCm,
+              floorMaterialProductWidthCm: selection.productWidthCm,
+              floorMaterialProductHeightCm: selection.productHeightCm,
+              floorLayoutPattern: selection.layoutPattern,
+              floorMaterialName: selection.name,
+              floorMaterialUnit: selection.unit,
+              floorMaterialPricePerUnit: selection.pricePerUnit,
+            })
+          }
+        />
+        {mode !== "preset" ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
+                Rotation
+                <select
+                  value={uvRotationDeg ?? 0}
+                  onChange={(e) => onPatch({ floorUvRotationDeg: Number(e.target.value) })}
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
+                >
+                  <option value={0}>0°</option>
+                  <option value={45}>45°</option>
+                  <option value={90}>90°</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
+                Layout
+                <select
+                  value={layoutPattern ?? (mode === "tile" ? "aligned" : "staggered")}
+                  onChange={(e) => onPatch({ floorLayoutPattern: e.target.value as FloorLayoutPattern })}
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
+                >
+                  <option value="aligned">Aligned grid</option>
+                  <option value="staggered">Staggered joints</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
+                Start side
+                <select
+                  value={textureStartSide}
+                  onChange={(e) =>
+                    onPatch({ floorTextureStartSide: e.target.value as FloorTextureStartSide })
+                  }
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
+                >
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+                  <option value="back">Back</option>
+                  <option value="front">Front</option>
+                </select>
+              </label>
+            </div>
+            {mode === "tile" && (
+              <div className="grid grid-cols-4 gap-2">
+                <NumberField label="Tile W cm" value={tileWcm} min={1} step={1} onChange={(v) => onPatch({ floorTileWidthCm: v })} />
+                <NumberField label="Tile H cm" value={tileHcm} min={1} step={1} onChange={(v) => onPatch({ floorTileHeightCm: v })} />
+                <NumberField label="Grout cm" value={groutCm} min={0} step={0.1} onChange={(v) => onPatch({ floorTileGroutCm: v })} />
+                <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
+                  Grout
+                  <input
+                    type="color"
+                    value={groutColor ?? "#d8d2c8"}
+                    onChange={(e) => onPatch({ floorTileGroutColor: e.target.value })}
+                    className="h-8 w-full rounded-md border border-[var(--border)] bg-transparent"
+                  />
+                </label>
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}

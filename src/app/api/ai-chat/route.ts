@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAiChatAllowed } from "@/lib/laravelPlan";
+import {
+  isIdentityOrMetaQuestion,
+  PUBLIC_AI_GENERIC_ERROR,
+  PUBLIC_AI_UNAVAILABLE,
+  TUNZONE_CHAT_IDENTITY_MESSAGE,
+} from "@/lib/tunzoneAi";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -8,6 +14,7 @@ interface ChatMessage {
 
 interface AIResponse {
   action?: "create" | "modify" | "delete" | "clear" | "info";
+  code?: string;
   objects?: Array<{
     type: "rect" | "circle";
     name: string;
@@ -45,31 +52,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get API key from environment or use a default
+    const normalizedMsgs = messages as ChatMessage[];
+    const lastUser = [...normalizedMsgs].reverse().find((m) => m.role === "user");
+    if (lastUser?.content && isIdentityOrMetaQuestion(lastUser.content)) {
+      return NextResponse.json({
+        action: "info",
+        message: TUNZONE_CHAT_IDENTITY_MESSAGE,
+      });
+    }
+
     const apiKey = process.env.OPENAI_API_KEY || process.env.CURSOR_API_KEY;
     const apiUrl = process.env.AI_API_URL || "https://api.openai.com/v1/chat/completions";
     const model = process.env.AI_MODEL || "gpt-4o-mini";
 
-    // Debug logging (remove in production or use proper logging)
     if (process.env.NODE_ENV === "development") {
-      console.log("API Config:", {
-        hasApiKey: !!apiKey,
-        apiUrl,
-        model,
-        keyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : "none",
-      });
+      console.log("[ai-chat] configured:", !!apiKey);
     }
 
     if (!apiKey) {
-      // Fallback to a simple rule-based system if no API key
       return NextResponse.json({
-        message: "AI API key not configured. Please set OPENAI_API_KEY or CURSOR_API_KEY in your environment variables. Make sure to restart your dev server after adding the key.",
         action: "info",
+        code: "SERVICE_UNAVAILABLE",
+        message: PUBLIC_AI_UNAVAILABLE,
       });
     }
 
-    // Prepare system prompt
-    const systemPrompt = `You are an AI assistant helping users design furniture in a 2D/3D editor. 
+    const systemPrompt = `You are Tunzone's chat — the in-app assistant for this furniture design editor (2D/3D canvas).
+
+IDENTITY (mandatory): If the user asks who you are, what model you are, what company built you, or any similar question, your reply in the "message" field must briefly say you are Tunzone's chat for this workspace. Never name or allude to external AI vendors, products, or base models. Never quote environment variable names or API details.
+
 You can create, modify, and delete objects on a canvas.
 
 Available actions:
@@ -106,7 +117,7 @@ If the user asks to create something, generate appropriate dimensions and colors
 
     const chatMessages: ChatMessage[] = [
       { role: "system", content: systemPrompt },
-      ...(messages as ChatMessage[]),
+      ...normalizedMsgs,
     ];
 
     // Call AI API
@@ -116,9 +127,13 @@ If the user asks to create something, generate appropriate dimensions and colors
       temperature: 0.7,
     };
 
-    // Only add response_format if using OpenAI (it supports JSON mode)
-    if (apiUrl.includes("openai.com")) {
-      requestBody.response_format = { type: "json_object" };
+    try {
+      const host = new URL(apiUrl).hostname;
+      if (host.endsWith("openai.com")) {
+        requestBody.response_format = { type: "json_object" };
+      }
+    } catch {
+      /* ignore invalid AI_API_URL */
     }
 
     const response = await fetch(apiUrl, {
@@ -131,23 +146,21 @@ If the user asks to create something, generate appropriate dimensions and colors
     });
 
     if (!response.ok) {
-      let errorMessage = "Failed to get AI response.";
       try {
         const errorData = await response.json();
-        errorMessage = errorData.error?.message || errorData.message || errorMessage;
         console.error("AI API Error:", errorData);
-      } catch (e) {
+      } catch {
         const errorText = await response.text();
-        console.error("AI API Error (text):", errorText);
-        errorMessage = `API Error: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`;
+        console.error("AI API Error (text):", errorText.slice(0, 500));
       }
-      
+
       return NextResponse.json(
         {
-          message: errorMessage,
+          message: PUBLIC_AI_GENERIC_ERROR,
           action: "info",
+          code: "UPSTREAM_ERROR",
         },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -157,7 +170,7 @@ If the user asks to create something, generate appropriate dimensions and colors
     if (!aiMessage) {
       return NextResponse.json(
         {
-          message: "No response from AI.",
+          message: "No response from the assistant.",
           action: "info",
         },
         { status: 500 }
@@ -185,13 +198,13 @@ If the user asks to create something, generate appropriate dimensions and colors
     return NextResponse.json(aiResponse);
   } catch (error) {
     console.error("Error in AI chat:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
     return NextResponse.json(
       {
-        message: `An error occurred: ${errorMessage}. Please check your API key and try again.`,
+        message: PUBLIC_AI_GENERIC_ERROR,
         action: "info",
+        code: "INTERNAL_ERROR",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

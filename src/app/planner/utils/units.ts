@@ -2,6 +2,13 @@ import type { LengthUnit } from "../types";
 
 const M_PER_IN = 0.0254;
 
+/** Normalizes persisted UI length units (bedroom / wardrobe planners). */
+export function normalizeLengthUnit(u: LengthUnit | undefined): LengthUnit {
+  if (u === "in") return "in";
+  if (u === "mm") return "mm";
+  return "cm";
+}
+
 /** Room plan size limits (meters); used for sliders and inputs. */
 export const ROOM_PLAN_MIN_M = 2;
 export const ROOM_PLAN_MAX_M = 15;

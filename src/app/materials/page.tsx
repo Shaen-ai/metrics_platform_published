@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
@@ -8,17 +9,20 @@ import { Button, Card, CardContent } from "@/components/ui";
 import { formatPrice } from "@/lib/utils";
 import { ArrowLeft, Home, Check, Filter } from "lucide-react";
 import { getDesignVariables, getSiteDesign } from "../site-designs/registry";
+import { getPublishedAdminSlug } from "@/lib/tenant";
+import { materialThumbnailSrc } from "@/lib/materialDisplayImage";
 
 export default function MaterialsPage() {
-  const { materials, initializeStore } = useStore();
+  const { materials, initializeStore, initialized } = useStore();
   const admin = useResolvedAdmin();
   const design = getSiteDesign(admin);
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
 
   useEffect(() => {
-    initializeStore();
-  }, [initializeStore]);
+    const slug = admin?.slug?.trim() || getPublishedAdminSlug();
+    void initializeStore(slug);
+  }, [initializeStore, admin?.slug]);
 
   const types = ["all", ...new Set(materials.map((m) => m.type))];
   const materialsTitle = admin?.publicSiteTexts?.materialsTitle?.trim() || "Materials";
@@ -121,7 +125,11 @@ export default function MaterialsPage() {
         )}
 
         {/* Materials Grid */}
-        {filteredMaterials.length === 0 ? (
+        {!initialized ? (
+          <div className="text-center py-16">
+            <p className="text-[var(--muted-foreground)]">Loading materials…</p>
+          </div>
+        ) : filteredMaterials.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-[var(--muted-foreground)]">No materials found.</p>
           </div>
@@ -129,6 +137,7 @@ export default function MaterialsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {filteredMaterials.map((material) => {
               const isSelected = selectedMaterials.includes(material.id);
+              const thumb = materialThumbnailSrc(material.imageUrl);
               return (
                 <Card
                   key={material.id}
@@ -139,11 +148,21 @@ export default function MaterialsPage() {
                   onClick={() => toggleMaterial(material.id)}
                 >
                   <div
-                    className="aspect-square relative"
+                    className="aspect-square relative overflow-hidden bg-[var(--muted)]"
                     style={{ backgroundColor: material.colorCode }}
                   >
+                    {thumb ? (
+                      <Image
+                        src={thumb}
+                        alt={material.name}
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : null}
                     {isSelected && (
-                      <div className="absolute inset-0 bg-[var(--primary)]/20 flex items-center justify-center">
+                      <div className="absolute inset-0 z-10 bg-[var(--primary)]/20 flex items-center justify-center">
                         <div className="w-8 h-8 bg-[var(--primary)] rounded-full flex items-center justify-center">
                           <Check className="w-5 h-5 text-white" />
                         </div>

@@ -32,6 +32,7 @@ const roomConfig = getPlannerConfig("room")!;
 export default function PlannerPage() {
   const initPlanner = usePlannerStore((s) => s.initPlanner);
   const fetchCatalog = usePlannerStore((s) => s.fetchCatalog);
+  const syncRoomSurfaceTextures = usePlannerStore((s) => s.syncRoomSurfaceTextures);
   const { initializeStore, initialized } = useStore();
   const admin = useResolvedAdmin();
   const [mounted, setMounted] = useState(false);
@@ -52,12 +53,16 @@ export default function PlannerPage() {
     fetchCatalog(admin?.slug || "demo", "room");
   }, [initialized, admin?.slug, admin?.useCustomPlannerCatalog, fetchCatalog]);
 
+  useEffect(() => {
+    if (!initialized) return;
+    syncRoomSurfaceTextures();
+  }, [initialized, syncRoomSurfaceTextures]);
+
   if (!mounted) {
     return (
       <div className="planner-layout">
         <aside className="planner-sidebar" />
-        <div className="planner-main">
-          <div className="planner-topbar" />
+        <TopBar>
           <div className="planner-canvas-wrapper" style={{
             display: "flex",
             alignItems: "center",
@@ -67,7 +72,7 @@ export default function PlannerPage() {
           }}>
             Loading 3D scene...
           </div>
-        </div>
+        </TopBar>
       </div>
     );
   }
@@ -76,10 +81,9 @@ export default function PlannerPage() {
     <PlannerTypeProvider config={roomConfig}>
       <div className="planner-layout">
         <Sidebar />
-        <div className="planner-main">
-          <TopBar />
+        <TopBar>
           <CanvasScene />
-        </div>
+        </TopBar>
         <RoomDesigner />
       </div>
     </PlannerTypeProvider>

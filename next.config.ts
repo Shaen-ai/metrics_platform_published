@@ -44,6 +44,10 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: "/api/image-proxy",
+        destination: `${API_ORIGIN}/api/image-proxy`,
+      },
+      {
         source: "/storage/:path*",
         destination: `${API_ORIGIN}/storage/:path*`,
       },

@@ -41,3 +41,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Raw vegetation source assets (downloaded by `npm run download:vegetation`).
+# Only the optimized GLBs / WebP textures under public/planner/vegetation/<kind>/
+# are committed; raw .gltf bundles can total several hundred MB.
+/public/planner/vegetation/_raw/

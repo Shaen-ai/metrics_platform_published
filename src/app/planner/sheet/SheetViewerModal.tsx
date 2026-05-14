@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -356,7 +357,7 @@ export default function SheetViewerModal({
       role="dialog"
       aria-modal="true"
     >
-      <div className="sheet-viewer-shell w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] shadow-2xl flex flex-col">
+      <div className="sheet-viewer-shell w-full max-w-5xl max-h-[90vh] min-h-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] shadow-2xl flex flex-col">
         <div className="sheet-viewer-header flex items-center justify-between px-5 py-3 border-b border-[var(--border)] gap-3">
           <div className="min-w-0">
             <h2 className="sheet-viewer-title text-lg font-semibold">{title}</h2>
@@ -392,7 +393,13 @@ export default function SheetViewerModal({
         ) : (
           <>
             {layout.byMaterial.length > 1 && (
-              <div className="sheet-viewer-tabs flex gap-1 px-5 pt-3 overflow-x-auto">
+              <div
+                className={`sheet-viewer-tabs px-5 pt-3 grid gap-2 ${
+                  layout.byMaterial.length === 2
+                    ? "grid-cols-2"
+                    : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                }`}
+              >
                 {layout.byMaterial.map((m) => {
                   const active = activeMaterial?.materialId === m.materialId;
                   return (
@@ -400,14 +407,16 @@ export default function SheetViewerModal({
                       key={m.materialId}
                       type="button"
                       onClick={() => setActiveMaterialId(m.materialId)}
-                      className={`sheet-viewer-tab px-3 py-1.5 text-sm rounded-lg border whitespace-nowrap ${
+                      className={`sheet-viewer-tab px-3 py-2 text-sm rounded-lg border text-left leading-snug ${
                         active
                           ? "sheet-viewer-tab--active bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
                           : "bg-[var(--background)] border-[var(--border)] hover:bg-[var(--accent)]"
                       }`}
                     >
-                      {m.material?.name ?? m.materialId}
-                      <span className="ml-1.5 text-[11px] opacity-75">
+                      <span className="break-words">
+                        {m.material?.name ?? m.materialId}
+                      </span>
+                      <span className="ml-1.5 text-[11px] opacity-75 whitespace-nowrap">
                         ({m.result.sheets.length})
                       </span>
                     </button>
@@ -490,6 +499,7 @@ function clientPxToSheetCm(
 }
 
 function MaterialPackingView({
+  className,
   packing,
   sortPlacements,
   allowManualAdjust,
@@ -500,6 +510,7 @@ function MaterialPackingView({
   selectedPanelId,
   setSelectedPanelId,
 }: {
+  className?: string;
   packing: SheetViewableMaterialPacking;
   sortPlacements?: (placements: Placement[]) => Placement[];
   allowManualAdjust?: boolean;
@@ -796,7 +807,11 @@ function MaterialPackingView({
   ]);
 
   return (
-    <div className="sheet-viewer-content flex-1 overflow-y-auto px-5 py-4 space-y-4">
+    <div
+      className={`sheet-viewer-content flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4${
+        className ? ` ${className}` : ""
+      }`}
+    >
       <div className="sheet-viewer-stats flex items-center gap-6 text-xs text-[var(--muted-foreground)]">
         <div>
           <span className="text-[var(--foreground)] font-medium">Sheet:</span>{" "}
@@ -1011,6 +1026,81 @@ function SheetSvgView({
     });
   }, [placements, overrideKeyForPanel, setPlacementOverrides]);
 
+  const [pieceClickTip, setPieceClickTip] = useState<{
+    title: string;
+    dimLine: string;
+    left: number;
+    top: number;
+  } | null>(null);
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  const recomputePieceClickTip = useCallback(() => {
+    if (!selectedPanelId) {
+      setPieceClickTip(null);
+      return;
+    }
+    const p = placements.find((pl) => pl.panelId === selectedPanelId);
+    if (!p) {
+      setPieceClickTip(null);
+      return;
+    }
+    const baseId = p.panelId.split(".addon.")[0];
+    const meta =
+      labelById.get(baseId) ?? labelById.get(p.panelId.split("#")[0]);
+    const displayName = meta?.label ?? p.label;
+    const dimLine = `${formatCmDim(p.widthCm)} × ${formatCmDim(p.heightCm)} cm`;
+
+    const svg = svgRef.current;
+    if (!svg) {
+      setPieceClickTip(null);
+      return;
+    }
+    const pt = svg.createSVGPoint();
+    pt.x = p.xCm + p.widthCm / 2;
+    pt.y = p.yCm + p.heightCm / 2;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) {
+      setPieceClickTip(null);
+      return;
+    }
+    const sp = pt.matrixTransform(ctm);
+    const pad = 10;
+    const tipMaxW = 280;
+    const tipH = 80;
+    let left = sp.x + 12;
+    let top = sp.y + 12;
+    if (typeof window !== "undefined") {
+      left = Math.min(left, window.innerWidth - tipMaxW - pad);
+      left = Math.max(pad, left);
+      top = Math.min(top, window.innerHeight - tipH - pad);
+      top = Math.max(pad, top);
+    }
+    setPieceClickTip({ title: displayName, dimLine, left, top });
+  }, [selectedPanelId, placements, labelById]);
+
+  useLayoutEffect(() => {
+    recomputePieceClickTip();
+  }, [recomputePieceClickTip]);
+
+  useEffect(() => {
+    if (!selectedPanelId) return;
+    const p = placements.find((pl) => pl.panelId === selectedPanelId);
+    if (!p) return;
+    const onResize = () => recomputePieceClickTip();
+    window.addEventListener("resize", onResize);
+    const el = svgRef.current;
+    const ro =
+      typeof ResizeObserver !== "undefined" && el
+        ? new ResizeObserver(() => recomputePieceClickTip())
+        : null;
+    if (ro && el) ro.observe(el);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      ro?.disconnect();
+    };
+  }, [selectedPanelId, placements, recomputePieceClickTip]);
+
   const toggleRot = useCallback(
     (panelId: string) => {
       const k = overrideKeyForPanel(panelId);
@@ -1059,6 +1149,7 @@ function SheetSvgView({
   );
 
   return (
+    <>
     <div
       ref={(el) => registerSheetContainerRef(sheetIndex, el)}
       className="sheet-viewer-board border border-[var(--border)] rounded-lg overflow-hidden bg-[var(--muted)]"
@@ -1080,12 +1171,18 @@ function SheetSvgView({
           )}
           <span className="text-[var(--muted-foreground)] shrink-0">
             {(usedRatio * 100).toFixed(1)}% used
+            {placements.length > 0
+              ? " · Click a piece for name & size (popover)"
+              : ""}
           </span>
         </div>
       </div>
       <div className="sheet-viewer-board-body p-3">
         <svg
-          ref={(el) => registerSheetSvgRef(sheetIndex, el)}
+          ref={(el) => {
+            svgRef.current = el;
+            registerSheetSvgRef(sheetIndex, el);
+          }}
           width={wPx}
           height={hPx}
           viewBox={`0 0 ${sheet.widthCm} ${sheet.heightCm}`}
@@ -1188,47 +1285,26 @@ function SheetSvgView({
             const m = Math.min(ep.widthCm, ep.heightCm);
             const labelFs = Math.min(3.2, Math.max(0.85, m * 0.11));
             const yLabel = ep.yCm + ep.heightCm * 0.42;
-            const dimLine = `${formatCmDim(ep.widthCm)} × ${formatCmDim(ep.heightCm)} cm${
-              ep.rotated ? " · rot." : ""
-            }`;
-            /** Large when selected so sizes stay readable on small cuts. */
-            let dimFs = Math.max(6, Math.min(14, m * 0.48));
-            let nameFsSel = Math.max(5, Math.min(10, m * 0.22));
-            if (isSelected) {
-              const longest = Math.max(displayName.length, dimLine.length);
-              if (longest * dimFs * 0.48 > ep.widthCm * 0.92) {
-                dimFs = (ep.widthCm * 0.92) / longest / 0.48;
-                dimFs = Math.max(5, dimFs);
-                nameFsSel = Math.max(4.5, dimFs * 0.68);
-              }
-            }
-            const insideBlockH = nameFsSel * 0.85 + dimFs * 0.85 + 1.2;
-            const putLabelsBelow = isSelected && ep.heightCm < insideBlockH;
-            const midBlock = ep.yCm + ep.heightCm / 2;
-            const yNameSel = putLabelsBelow
-              ? Math.min(
-                  sheet.heightCm - dimFs - nameFsSel - 0.8,
-                  ep.yCm + ep.heightCm + 1.0 + nameFsSel * 0.35,
-                )
-              : midBlock - dimFs * 0.38 - nameFsSel * 0.2;
-            const yDim = putLabelsBelow
-              ? yNameSel + nameFsSel * 0.82 + 0.35
-              : midBlock + dimFs * 0.38;
-            const dimText = dimLine;
-            const pieceTooltip = `${displayName} — ${dimText}`;
-            const pieceMin = Math.min(ep.widthCm, ep.heightCm);
+            const dimLine = `${formatCmDim(ep.widthCm)} × ${formatCmDim(ep.heightCm)} cm`;
+            const pieceTooltip = `${displayName} — ${dimLine}`;
+            const tooTightForUnselectedName = m < 14;
             const rotBox = Math.min(
               rotateChipTargetCm,
-              Math.max(6, pieceMin * 0.52 - 0.1),
+              Math.max(6, m * 0.52 - 0.1),
             );
             const rotFx = Math.max(ep.xCm, ep.xCm + ep.widthCm - rotBox - 0.05);
             const rotFy = ep.yCm + 0.05;
             return (
-              <g key={p.panelId} aria-label={pieceTooltip}>
-                <title>{pieceTooltip}</title>
+              <g
+                key={p.panelId}
+                aria-label={pieceTooltip}
+              >
+                <title>{`${displayName}\n${dimLine}`}</title>
                 <g
                   style={allowManualAdjust ? { cursor: "grab" } : undefined}
-                  onPointerDown={(e) => onBeginPieceDrag(p.panelId, e)}
+                  onPointerDown={(e) => {
+                    onBeginPieceDrag(p.panelId, e);
+                  }}
                 >
                   {textureUrl && (
                     <>
@@ -1264,7 +1340,7 @@ function SheetSvgView({
                     }
                     strokeDasharray="2 1.4"
                   />
-                  {!isSelected && (
+                  {!isSelected && !tooTightForUnselectedName && (
                     <text
                       x={midX}
                       y={yLabel}
@@ -1283,46 +1359,6 @@ function SheetSvgView({
                     >
                       {displayName}
                     </text>
-                  )}
-                  {isSelected && (
-                    <>
-                      <text
-                        x={midX}
-                        y={yNameSel}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                        fill="rgba(0,0,0,0.88)"
-                        fontSize={nameFsSel}
-                        fontWeight={600}
-                        style={
-                          {
-                            paintOrder: "stroke",
-                            stroke: "rgba(255,255,255,0.92)",
-                            strokeWidth: 0.55,
-                          } as React.CSSProperties
-                        }
-                      >
-                        {displayName}
-                      </text>
-                      <text
-                        x={midX}
-                        y={yDim}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                        fill="rgb(30 64 175)"
-                        fontSize={dimFs}
-                        fontWeight={700}
-                        style={
-                          {
-                            paintOrder: "stroke",
-                            stroke: "rgba(255,255,255,0.95)",
-                            strokeWidth: 0.65,
-                          } as React.CSSProperties
-                        }
-                      >
-                        {dimText}
-                      </text>
-                    </>
                   )}
                 </g>
                 {allowManualAdjust && isSelected && (
@@ -1438,9 +1474,28 @@ function SheetSvgView({
       {freeRects.length > 0 && (
         <p className="px-3 pb-2 pt-0.5 text-[10px] text-[var(--muted-foreground)] border-t border-[var(--border)]">
           Shaded areas are unused (kerf margin around cuts). Tap one for label and width × height
-          on the board; hover for a tooltip. Tap the board to clear.
+          on the board. Tap the board to clear.
         </p>
       )}
     </div>
+    {pieceClickTip &&
+      (() => {
+        return (
+          <div
+            role="tooltip"
+            aria-live="polite"
+            className="pointer-events-none fixed z-[535] w-max max-w-[min(280px,calc(100vw-20px))] rounded-md border border-white/12 bg-neutral-900 px-3 py-2.5 text-left text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-neutral-950"
+            style={{ left: pieceClickTip.left, top: pieceClickTip.top }}
+          >
+            <div className="text-[12px] font-semibold leading-snug text-white/95">
+              {pieceClickTip.title}
+            </div>
+            <div className="mt-1.5 text-[12px] font-mono tabular-nums tracking-tight text-emerald-200/95">
+              {pieceClickTip.dimLine}
+            </div>
+          </div>
+        );
+      })()}
+    </>
   );
 }

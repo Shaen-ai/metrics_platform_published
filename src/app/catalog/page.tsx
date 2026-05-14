@@ -11,7 +11,7 @@ import {
   type FlyToCartTone,
 } from "@/components/catalog/flyToCart";
 import { useStore } from "@/lib/store";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatPrice, toRelativeStorageUrl } from "@/lib/utils";
 import { CatalogItem } from "@/lib/types";
 import { getCatalog3dPresentation } from "@/lib/catalog3d";
 import CatalogModelViewer from "@/components/CatalogModelViewer";
@@ -164,10 +164,11 @@ function ItemMedia({
     );
   }
 
-  if (item.images[0]) {
+  const imageSrc = toRelativeStorageUrl(item.images[0]);
+  if (imageSrc) {
     return (
       <Image
-        src={item.images[0]}
+        src={imageSrc}
         alt={item.name}
         fill
         className={`object-cover object-[center_38%] transition-transform duration-500 group-hover:scale-105 ${className || ""}`}

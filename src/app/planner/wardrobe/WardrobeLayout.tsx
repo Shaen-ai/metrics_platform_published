@@ -8,7 +8,7 @@ import TemplatesOverlay from "./TemplatesOverlay";
 import { useWardrobeStore } from "./store";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
-import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
+import { filterMaterialsForPlanner, mergeDefaultBoardMaterialsWhenMissing, isWardrobeBoardFinishMaterial } from "@/lib/plannerMaterials";
 import {
   materialsFromStore,
   doorFrontMaterialsFromStore,
@@ -16,7 +16,9 @@ import {
   handleMaterialsFromStore,
   withDefaultWardrobeDoorFinishes,
   INTERNAL_RENDER_FALLBACK,
+  clampWardrobeConfigMaterialsToAvailable,
 } from "./data";
+import { WardrobeStandaloneSheetLayoutProvider } from "../sheet/useWardrobeSheetLayout";
 import "./wardrobe.css";
 
 const WardrobeCanvas = dynamic(() => import("./WardrobeCanvas"), {
@@ -33,9 +35,15 @@ export default function WardrobeLayout() {
   const rawMaterials = useStore((s) => s.materials);
   const admin = useResolvedAdmin();
   const setAvailableMaterials = useWardrobeStore((s) => s.setAvailableMaterials);
+  const setConfigForHydrate = useWardrobeStore((s) => s.setConfigForHydrate);
 
   useEffect(() => {
-    const storeMaterials = filterMaterialsForPlanner(rawMaterials, admin?.plannerMaterialIds);
+    const storeMaterials = mergeDefaultBoardMaterialsWhenMissing(
+      filterMaterialsForPlanner(rawMaterials, admin?.plannerMaterialIds),
+      admin?.id,
+      isWardrobeBoardFinishMaterial,
+      admin?.plannerMaterialIds,
+    );
     const frameMats = materialsFromStore(storeMaterials, admin?.companyName);
     const doorMats = withDefaultWardrobeDoorFinishes(
       doorFrontMaterialsFromStore(storeMaterials, admin?.companyName),
@@ -44,7 +52,12 @@ export default function WardrobeLayout() {
     const handleMats = handleMaterialsFromStore(storeMaterials, admin?.companyName);
     setAvailableMaterials(frameMats, doorMats, slideMats, handleMats);
 
-    const st = useWardrobeStore.getState();
+    let st = useWardrobeStore.getState();
+    const clamped = clampWardrobeConfigMaterialsToAvailable(st.config, frameMats, doorMats);
+    if (JSON.stringify(clamped) !== JSON.stringify(st.config)) {
+      setConfigForHydrate(clamped);
+      st = useWardrobeStore.getState();
+    }
     if (slideMats.length > 0) {
       const mechIds = new Set(slideMats.map((m) => m.id));
       if (!mechIds.has(st.config.doors.slidingMechanismId)) {
@@ -64,43 +77,25 @@ export default function WardrobeLayout() {
     const preselect = params.get("material");
     const ids = new Set(frameMats.map((m) => m.id));
     if (preselect && ids.has(preselect)) {
-      st.setFrameMaterial(preselect);
+      st.setExteriorMaterial(preselect);
       st.setInteriorMaterial(preselect);
       window.history.replaceState({}, "", window.location.pathname);
     }
-  }, [rawMaterials, admin, setAvailableMaterials]);
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const isMeta = e.metaKey || e.ctrlKey;
-      if (isMeta && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        useWardrobeStore.getState().undo();
-      }
-      if (isMeta && e.key === "z" && e.shiftKey) {
-        e.preventDefault();
-        useWardrobeStore.getState().redo();
-      }
-      if (isMeta && e.key === "y") {
-        e.preventDefault();
-        useWardrobeStore.getState().redo();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [rawMaterials, admin, setAvailableMaterials, setConfigForHydrate]);
 
   return (
     <div className="wardrobe-layout">
       <HeaderToolbar />
-      <div className="wardrobe-body">
-        <div className="wardrobe-main">
-          <WardrobeCanvas />
+      <WardrobeStandaloneSheetLayoutProvider>
+        <div className="wardrobe-body">
+          <div className="wardrobe-main">
+            <WardrobeCanvas />
+          </div>
+          <aside className="wardrobe-sidebar">
+            <ConfigSidebar />
+          </aside>
         </div>
-        <aside className="wardrobe-sidebar">
-          <ConfigSidebar />
-        </aside>
-      </div>
+      </WardrobeStandaloneSheetLayoutProvider>
       <TemplatesOverlay />
     </div>
   );

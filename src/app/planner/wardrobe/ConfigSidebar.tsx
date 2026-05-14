@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useId } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronRight,
@@ -22,8 +22,13 @@ import {
   X,
 } from "lucide-react";
 import { useWardrobeStore } from "./store";
-import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
+import { api } from "@/lib/api";
+import { mapTemplateRowToMaterial, type PublicMaterialTemplateRow } from "@/lib/materialTemplateToMaterial";
+import {
+  isWardrobeBoardFinishMaterial,
+  isWardrobeDoorFinishMaterial,
+} from "@/lib/plannerMaterials";
 import { formatPrice } from "@/lib/utils";
 import { useWardrobeSheetLayout } from "../sheet/useWardrobeSheetLayout";
 import {
@@ -36,7 +41,6 @@ import {
   COMPONENT_CATALOG,
   HANDLES,
   SHELF_PIN_SPACING,
-  getMaterial,
   SECTION_MIN_WIDTH_CM,
   totalInteriorSectionWidthsCm,
   LEG_HEIGHT_MIN,
@@ -47,7 +51,6 @@ import {
   totalWardrobeHeightCm,
   wardrobeBaseLiftCm,
   INTERNAL_RENDER_FALLBACK,
-  groupWardrobeMaterialsByCategory,
   groupWardrobeMaterialsByBrand,
   getComponentDef,
   PANEL_THICKNESS,
@@ -58,6 +61,11 @@ import {
   shelfMaxWidthCm,
   shelfMaxDepthCm,
   shelfPanelDepthCm,
+  wardrobeDoorPanelMaterialIdsLength,
+  hingedDoorCountForSection,
+  materialsFromStore,
+  wardrobeManufacturerRowForDoorPool,
+  wardrobeManufacturerRowForFramePool,
 } from "./data";
 import type { WardrobeMaterial } from "./data";
 import type {
@@ -67,9 +75,31 @@ import type {
   WardrobeAddon,
   WardrobeBaseType,
   ShelfDepthPlacement,
+  WardrobeSpaceLayoutPreset,
+  WardrobeWalkInVariant,
+  WardrobeCornerAttachment,
+  WardrobePrimaryRun,
 } from "./types";
-import { createLaminateThumbnailDataUrl } from "../scene/RoomMesh";
-import type { FloorStyle } from "../types";
+import { PlannerFloorSurfaceControls } from "../components/PlannerFloorSurfaceControls";
+import { PlannerInteriorSurfaceControls } from "../components/PlannerInteriorSurfaceControls";
+import {
+  WARDROBE_BRIDGE_LIFT_DEFAULT_CM,
+  WARDROBE_BRIDGE_LIFT_MIN_CM,
+  WARDROBE_BRIDGE_LIFT_MAX_CM,
+  maxBackWallWidthCm,
+  wardrobeRoomHalfExtents,
+} from "./wardrobeSpaceLayout";
+import { LengthUnitToggleButtons } from "../components/LengthUnitToggle";
+import {
+  ROOM_PLAN_MIN_M,
+  ROOM_PLAN_MAX_M,
+  ROOM_HEIGHT_MIN_M,
+  ROOM_HEIGHT_MAX_M,
+  metersToDisplay,
+  displayToMeters,
+  formatLengthLabel,
+} from "../utils/units";
+import type { LengthUnit } from "../types";
 
 type SidebarPanel =
   | "home"
@@ -87,14 +117,20 @@ const CATEGORIES: {
 }[] = [
   { id: "frames", label: "Wardrobe frame", icon: <Box size={20} /> },
   { id: "interiors", label: "Interiors", icon: <LayoutGrid size={20} /> },
-  { id: "doors", label: "Doors & fronts", icon: <DoorOpen size={20} /> },
+  { id: "doors", label: "Doors", icon: <DoorOpen size={20} /> },
   { id: "handles", label: "Handles", icon: <Grip size={20} /> },
-  { id: "materials", label: "Finishes", icon: <Paintbrush size={20} /> },
+  { id: "materials", label: "Materials", icon: <Paintbrush size={20} /> },
   { id: "room", label: "Room", icon: <Home size={20} /> },
 ];
 
 /** Stable fallback so Zustand selectors do not return a new [] each snapshot. */
 const EMPTY_WARDROBE_ADDONS: WardrobeAddon[] = [];
+
+/** Avoid `browseCatalogMaterials = []` defaults (new identity each render). */
+const EMPTY_MANUFACTURER_CATALOG_MATERIALS: WardrobeMaterial[] = [];
+
+const WARDROBE_BROWSE_CATALOG_SUBTITLE =
+  "Full manufacturer template library — the same catalog as Admin → Materials → Import from manufacturer catalog.";
 
 export default function ConfigSidebar() {
   const [panel, setPanel] = useState<SidebarPanel>("home");
@@ -216,6 +252,241 @@ function DimInput({
   );
 }
 
+const FOOTPRINT_PRESETS: {
+  id: WardrobeSpaceLayoutPreset;
+  title: string;
+  description: string;
+}[] = [
+  {
+    id: "linear",
+    title: "Straight run",
+    description: "Single wall — classic built-in along one side.",
+  },
+  {
+    id: "l_shape",
+    title: "L-shaped wardrobe",
+    description: "Two perpendicular walls meet at a corner.",
+  },
+  {
+    id: "u_shape",
+    title: "U-shaped wardrobe",
+    description: "Three sides wrapped — maximum hanging and storage.",
+  },
+  {
+    id: "parallel",
+    title: "Parallel / galley",
+    description: "Face-to-face runs — narrow dressing corridor.",
+  },
+  {
+    id: "walk_in",
+    title: "Walk-in closet",
+    description: "Pick footprint: U, L, parallel, or island-in-the-middle.",
+  },
+  {
+    id: "island_walk_in",
+    title: "Island walk-in",
+    description: "U-shaped perimeter plus a center island run.",
+  },
+  {
+    id: "bridge",
+    title: "Bridge wardrobe",
+    description: "Overhead cabinets — elevated span above a doorway or opening.",
+  },
+];
+
+const WALK_IN_VARIANTS: { id: WardrobeWalkInVariant; label: string }[] = [
+  { id: "u", label: "U layout" },
+  { id: "l", label: "L layout" },
+  { id: "parallel", label: "Parallel / galley" },
+  { id: "island", label: "Island layout" },
+];
+
+function wardrobePrimaryRunOptions(
+  preset: WardrobeSpaceLayoutPreset,
+  walkInVariant: WardrobeWalkInVariant,
+): { id: WardrobePrimaryRun; label: string }[] {
+  if (preset === "parallel" || (preset === "walk_in" && walkInVariant === "parallel")) {
+    return [
+      { id: "left", label: "Wall A (first run)" },
+      { id: "right", label: "Wall B (opposite)" },
+    ];
+  }
+  if (preset === "l_shape" || (preset === "walk_in" && walkInVariant === "l")) {
+    return [
+      { id: "back", label: "Back wall" },
+      { id: "side", label: "Return wing" },
+    ];
+  }
+  if (
+    preset === "u_shape" ||
+    preset === "island_walk_in" ||
+    (preset === "walk_in" && (walkInVariant === "u" || walkInVariant === "island"))
+  ) {
+    return [
+      { id: "back", label: "Back wall" },
+      { id: "left", label: "Left wing" },
+      { id: "right", label: "Right wing" },
+    ];
+  }
+  return [];
+}
+
+function WardrobeFootprintSection() {
+  const room = useWardrobeStore((s) => s.room);
+  const preset = useWardrobeStore((s) => s.room.spaceLayoutPreset ?? "linear");
+  const walkInVariant = useWardrobeStore((s) => s.room.walkInVariant ?? "u");
+  const frameDepthCm = useWardrobeStore((s) => s.config.frame.depth);
+  const frameWidthCm = useWardrobeStore((s) => s.config.frame.width);
+  const bridgeLiftCm = useWardrobeStore(
+    (s) => s.room.bridgeLiftCm ?? WARDROBE_BRIDGE_LIFT_DEFAULT_CM,
+  );
+  const cornerAttachment = room.wardrobeCornerAttachment ?? "left";
+  const primaryRun = room.wardrobePrimaryRun;
+  const setSpaceLayoutPreset = useWardrobeStore((s) => s.setSpaceLayoutPreset);
+  const setWalkInVariant = useWardrobeStore((s) => s.setWalkInVariant);
+  const setBridgeLiftCm = useWardrobeStore((s) => s.setBridgeLiftCm);
+  const setWardrobeCornerAttachment = useWardrobeStore((s) => s.setWardrobeCornerAttachment);
+  const setWardrobePrimaryRun = useWardrobeStore((s) => s.setWardrobePrimaryRun);
+
+  const showCornerControls =
+    preset === "l_shape" ||
+    preset === "u_shape" ||
+    preset === "island_walk_in" ||
+    (preset === "walk_in" && (walkInVariant === "u" || walkInVariant === "l" || walkInVariant === "island"));
+
+  const primaryOpts = wardrobePrimaryRunOptions(
+    preset,
+    preset === "walk_in" ? walkInVariant : "u",
+  );
+  const showPrimaryControls = primaryOpts.length > 0;
+
+  const { hw } = wardrobeRoomHalfExtents(room);
+  const maxBackCm = maxBackWallWidthCm(hw, frameDepthCm * 0.01);
+  const showBackSpanNote =
+    showCornerControls &&
+    (preset === "u_shape" ||
+      preset === "island_walk_in" ||
+      preset === "l_shape" ||
+      (preset === "walk_in" && (walkInVariant === "u" || walkInVariant === "l" || walkInVariant === "island"))) &&
+    frameWidthCm > maxBackCm + 0.5;
+
+  return (
+    <div className="cfg-group wardrobe-footprint-section">
+      <span className="cfg-label">Wardrobe footprint</span>
+      <span className="cfg-sublabel">
+        How many wall runs use your design — pricing and sheet cuts scale per run. L/U back walls
+        automatically fit between wing depths (no overlapping corners). Set preview room size under{" "}
+        <strong>Room</strong>.
+      </span>
+      <div className="wardrobe-footprint-grid">
+        {FOOTPRINT_PRESETS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            className={`wardrobe-footprint-card ${preset === opt.id ? "active" : ""}`}
+            onClick={() => setSpaceLayoutPreset(opt.id)}
+          >
+            <span className="wardrobe-footprint-card-title">{opt.title}</span>
+            <span className="wardrobe-footprint-card-desc">{opt.description}</span>
+          </button>
+        ))}
+      </div>
+
+      {preset === "walk_in" && (
+        <div className="wardrobe-footprint-walkin-sub">
+          <span className="cfg-label">Walk-in footprint</span>
+          <div className="wardrobe-footprint-chip-row">
+            {WALK_IN_VARIANTS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className={`cfg-chip ${walkInVariant === v.id ? "active" : ""}`}
+                onClick={() => setWalkInVariant(v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showCornerControls && (
+        <div className="wardrobe-footprint-walkin-sub">
+          <span className="cfg-label">Corner</span>
+          <span className="cfg-sublabel">Mirror the layout (return run on the other wall).</span>
+          <div className="wardrobe-footprint-chip-row">
+            <button
+              type="button"
+              className={`cfg-chip ${cornerAttachment === "left" ? "active" : ""}`}
+              onClick={() => setWardrobeCornerAttachment("left")}
+            >
+              Left corner
+            </button>
+            <button
+              type="button"
+              className={`cfg-chip ${cornerAttachment === "right" ? "active" : ""}`}
+              onClick={() => setWardrobeCornerAttachment("right")}
+            >
+              Right corner
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showPrimaryControls && (
+        <div className="wardrobe-footprint-walkin-sub">
+          <span className="cfg-label">Primary editable run</span>
+          <span className="cfg-sublabel">
+            Bays, doors, and dimensions follow this run; other runs reuse the same proportions at their real
+            widths. Clear to use the automatic default.
+          </span>
+          <div className="wardrobe-footprint-chip-row">
+            {primaryOpts.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className={`cfg-chip ${primaryRun === o.id ? "active" : ""}`}
+                onClick={() => setWardrobePrimaryRun(o.id)}
+              >
+                {o.label}
+              </button>
+            ))}
+            {primaryRun !== undefined && (
+              <button type="button" className="cfg-chip" onClick={() => setWardrobePrimaryRun(undefined)}>
+                Auto
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showBackSpanNote && (
+        <p className="cfg-hint" style={{ marginTop: "10px" }}>
+          For this room size and module depth, the back wall fits up to ~{Math.round(maxBackCm)} cm wide. Wider
+          modules apply full width on wing runs; the back run stays within the clear span (panels/doors scale
+          proportionally).
+        </p>
+      )}
+
+      {preset === "bridge" && (
+        <div className="wardrobe-footprint-bridge">
+          <span className="cfg-label">Elevation above floor</span>
+          <span className="cfg-sublabel">{Math.round(bridgeLiftCm)} cm</span>
+          <input
+            type="range"
+            min={WARDROBE_BRIDGE_LIFT_MIN_CM}
+            max={WARDROBE_BRIDGE_LIFT_MAX_CM}
+            step={1}
+            value={bridgeLiftCm}
+            onChange={(e) => setBridgeLiftCm(Number(e.target.value))}
+            style={{ width: "100%", marginTop: "8px" }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FramesPanel() {
   const frame = useWardrobeStore((s) => s.config.frame);
   const base = useWardrobeStore((s) => s.config.base);
@@ -317,6 +588,10 @@ function FramesPanel() {
           />
         </div>
       </div>
+
+      <div className="cfg-divider" />
+
+      <WardrobeFootprintSection />
 
       <div className="cfg-divider" />
 
@@ -1060,65 +1335,39 @@ function InteriorsPanel() {
   );
 }
 
-function WardrobeFinishesByCategory({
+/** Full-screen browser: materials grouped by brand (search + scroll). */
+function WardrobeMaterialsBrowseModal({
   materials,
-  keyPrefix,
-  selectedId,
-  onPick,
-}: {
-  materials: WardrobeMaterial[];
-  keyPrefix: string;
-  selectedId: string;
-  onPick: (id: string) => void;
-}) {
-  const groups = useMemo(() => groupWardrobeMaterialsByCategory(materials), [materials]);
-  return (
-    <>
-      {groups.map((g) => (
-        <div key={g.key} className="wardrobe-finish-cat" style={{ marginBottom: 10 }}>
-          <span className="cfg-sublabel" style={{ display: "block", marginBottom: "6px" }}>
-            {g.label}
-          </span>
-          <div className="mat-grid">
-            {g.items.map((mat) => (
-              <button
-                key={`${keyPrefix}-${g.key}-${mat.id}`}
-                type="button"
-                className={`mat-swatch ${selectedId === mat.id ? "selected" : ""}`}
-                onClick={() => onPick(mat.id)}
-                title={mat.name}
-              >
-                <SwatchCircle mat={mat} />
-                <span className="mat-swatch-name">{mat.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function DoorFinishFullScreenModal({
-  doorMaterials,
   selectedId,
   onClose,
   onSelect,
+  title,
+  catalogLoading = false,
+  catalogSubtitle,
 }: {
-  doorMaterials: WardrobeMaterial[];
+  materials: WardrobeMaterial[];
   selectedId: string;
   onClose: () => void;
   onSelect: (id: string) => void;
+  title: string;
+  catalogLoading?: boolean;
+  catalogSubtitle?: string;
 }) {
+  const titleId = useId();
   const [search, setSearch] = useState("");
-  const byBrand = useMemo(() => groupWardrobeMaterialsByBrand(doorMaterials), [doorMaterials]);
+  const byBrand = useMemo(() => groupWardrobeMaterialsByBrand(materials), [materials]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return byBrand;
     return byBrand
       .map((g) => ({
         ...g,
-        items: g.items.filter((m) => m.name.toLowerCase().includes(q)),
+        items: g.items.filter((m) => {
+          const hay = [m.name, m.manufacturer ?? "", m.categoryKey ?? "", m.brandKey ?? ""]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        }),
       }))
       .filter((g) => g.items.length > 0);
   }, [byBrand, search]);
@@ -1144,14 +1393,21 @@ function DoorFinishFullScreenModal({
       className="wardrobe-door-material-modal"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="wardrobe-door-material-modal-title"
+      aria-labelledby={titleId}
     >
       <div className="wardrobe-door-material-modal-backdrop" onClick={onClose} aria-hidden />
       <div className="wardrobe-door-material-modal-panel">
         <div className="wardrobe-door-material-modal-header">
-          <h2 id="wardrobe-door-material-modal-title" className="wardrobe-door-material-modal-title">
-            All door materials
-          </h2>
+          <div className="wardrobe-door-material-modal-heading">
+            <h2 id={titleId} className="wardrobe-door-material-modal-title">
+              {title}
+            </h2>
+            {catalogSubtitle ? (
+              <p className="cfg-sublabel" style={{ margin: "6px 0 0", maxWidth: 560, lineHeight: 1.35 }}>
+                {catalogSubtitle}
+              </p>
+            ) : null}
+          </div>
           <div className="wardrobe-door-material-modal-search">
             <Search size={16} className="wardrobe-door-material-modal-search-icon" aria-hidden />
             <input
@@ -1172,7 +1428,11 @@ function DoorFinishFullScreenModal({
           </button>
         </div>
         <div className="wardrobe-door-material-modal-body">
-          {filtered.length === 0 ? (
+          {catalogLoading && filtered.length === 0 ? (
+            <p className="cfg-sublabel" style={{ padding: "24px 16px" }}>
+              Loading manufacturer catalog…
+            </p>
+          ) : filtered.length === 0 ? (
             <p className="cfg-sublabel" style={{ padding: "24px 16px" }}>
               No materials match your search.
             </p>
@@ -1206,36 +1466,66 @@ function DoorFinishFullScreenModal({
   return createPortal(node, document.body);
 }
 
-function DoorFinishByBrand({
-  doorMaterials,
+function wardrobeBrowseMergedMaterials(base: WardrobeMaterial[], extras: WardrobeMaterial[]): WardrobeMaterial[] {
+  const byId = new Map<string, WardrobeMaterial>();
+  for (const x of extras) {
+    if (!byId.has(x.id)) byId.set(x.id, x);
+  }
+  for (const t of base) {
+    byId.set(t.id, t);
+  }
+  return [...byId.values()];
+}
+
+function WardrobeFinishesByBrand({
+  materials,
   keyPrefix,
   selectedId,
   onPick,
+  browseModalTitle = "All materials",
+  browseCatalogMaterials = EMPTY_MANUFACTURER_CATALOG_MATERIALS,
+  browseCatalogLoading = false,
+  browseCatalogSubtitle,
 }: {
-  doorMaterials: WardrobeMaterial[];
+  materials: WardrobeMaterial[];
   keyPrefix: string;
   selectedId: string;
   onPick: (id: string) => void;
+  /** Title for full-screen browse (grouped by brand). */
+  browseModalTitle?: string;
+  /** Global manufacturer library (same source as Admin → Materials → Import from manufacturer catalog). */
+  browseCatalogMaterials?: WardrobeMaterial[];
+  browseCatalogLoading?: boolean;
+  browseCatalogSubtitle?: string;
 }) {
-  const byBrand = useMemo(() => groupWardrobeMaterialsByBrand(doorMaterials), [doorMaterials]);
-  const [activeBrand, setActiveBrand] = useState<string>("");
+  const mergeCatalogMaterialsIntoPools = useWardrobeStore((s) => s.mergeCatalogMaterialsIntoPools);
+  const modalMaterials = useMemo(
+    () => wardrobeBrowseMergedMaterials(materials, browseCatalogMaterials),
+    [materials, browseCatalogMaterials],
+  );
+  const byBrand = useMemo(() => groupWardrobeMaterialsByBrand(materials), [materials]);
+  const inferredBrandKey = useMemo(() => {
+    const g = byBrand.find((b) => b.items.some((m) => m.id === selectedId));
+    return g?.key ?? byBrand[0]?.key ?? "";
+  }, [byBrand, selectedId]);
+
+  /** When the user taps a brand chip without changing the selected finish, remember that brand until selection changes. */
+  const [manualBrandPick, setManualBrandPick] = useState<{
+    anchorSelectedId: string;
+    brandKey: string;
+  } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    const g = byBrand.find((b) => b.items.some((m) => m.id === selectedId));
-    if (g) {
-      setActiveBrand(g.key);
-      return;
-    }
-    if (byBrand[0]) setActiveBrand(byBrand[0].key);
-  }, [selectedId, byBrand]);
+  const activeBrandKey =
+    manualBrandPick?.anchorSelectedId === selectedId ? manualBrandPick.brandKey : inferredBrandKey;
 
-  const current = byBrand.find((b) => b.key === activeBrand);
+  const current =
+    byBrand.find((b) => b.key === activeBrandKey) ?? byBrand.find((b) => b.key === inferredBrandKey);
   const currentItems = current?.items ?? [];
 
   return (
     <>
-      <div className="cfg-label-row" style={{ marginBottom: 8, width: "100%" }}>
+      <div className="cfg-label-row wardrobe-finishes-brand-header">
         <span className="cfg-sublabel" style={{ margin: 0 }}>
           Brand
         </span>
@@ -1253,8 +1543,8 @@ function DoorFinishByBrand({
           <button
             key={b.key}
             type="button"
-            className={`cfg-chip ${activeBrand === b.key ? "active" : ""}`}
-            onClick={() => setActiveBrand(b.key)}
+            className={`cfg-chip ${activeBrandKey === b.key ? "active" : ""}`}
+            onClick={() => setManualBrandPick({ anchorSelectedId: selectedId, brandKey: b.key })}
           >
             {b.label}
             <span className="wardrobe-brand-chip-count"> {b.items.length}</span>
@@ -1264,7 +1554,7 @@ function DoorFinishByBrand({
       <div className="mat-grid" style={{ marginTop: 8 }}>
         {currentItems.map((mat) => (
           <button
-            key={`${keyPrefix}-${activeBrand}-${mat.id}`}
+            key={`${keyPrefix}-${activeBrandKey}-${mat.id}`}
             type="button"
             className={`mat-swatch ${selectedId === mat.id ? "selected" : ""}`}
             onClick={() => onPick(mat.id)}
@@ -1276,16 +1566,31 @@ function DoorFinishByBrand({
         ))}
       </div>
       {modalOpen && (
-        <DoorFinishFullScreenModal
-          doorMaterials={doorMaterials}
+        <WardrobeMaterialsBrowseModal
+          materials={modalMaterials}
           selectedId={selectedId}
+          catalogLoading={browseCatalogLoading}
+          catalogSubtitle={browseCatalogSubtitle}
           onClose={() => setModalOpen(false)}
           onSelect={(id) => {
+            const inTenantSidebar = materials.some((m) => m.id === id);
+            if (!inTenantSidebar) {
+              const picked = modalMaterials.find((m) => m.id === id);
+              if (picked) mergeCatalogMaterialsIntoPools([picked]);
+            }
             onPick(id);
             setModalOpen(false);
-            const g = byBrand.find((b) => b.items.some((m) => m.id === id));
-            if (g) setActiveBrand(g.key);
+            let gBrand = groupWardrobeMaterialsByBrand(materials).find((b) =>
+              b.items.some((m) => m.id === id),
+            );
+            if (!gBrand) {
+              gBrand = groupWardrobeMaterialsByBrand(modalMaterials).find((b) =>
+                b.items.some((m) => m.id === id),
+              );
+            }
+            if (gBrand) setManualBrandPick({ anchorSelectedId: id, brandKey: gBrand.key });
           }}
+          title={browseModalTitle}
         />
       )}
     </>
@@ -1298,18 +1603,10 @@ function DoorsPanel() {
   const doors = useWardrobeStore((s) => s.config.doors);
   const sections = useWardrobeStore((s) => s.config.sections);
   const showDoors = useWardrobeStore((s) => s.ui.showDoors);
-  const doorGrain = useWardrobeStore((s) => s.config.doorGrainDirection ?? "horizontal");
   const setDoorType = useWardrobeStore((s) => s.setDoorType);
-  const setAllDoorPanelMaterials = useWardrobeStore((s) => s.setAllDoorPanelMaterials);
-  const setDoorPanelMaterial = useWardrobeStore((s) => s.setDoorPanelMaterial);
-  const setDoorPanelGrainDirection = useWardrobeStore((s) => s.setDoorPanelGrainDirection);
   const setSlidingMechanism = useWardrobeStore((s) => s.setSlidingMechanism);
-  const setDoorGrain = useWardrobeStore((s) => s.setDoorGrainDirection);
   const toggleDoors = useWardrobeStore((s) => s.toggleDoors);
-  const doorMaterials = useWardrobeStore((s) => s.availableDoorMaterials);
   const slidingMechanisms = useWardrobeStore((s) => s.availableSlidingMechanisms);
-  const customizeEachDoor = useWardrobeStore((s) => s.ui.customizeEachDoor);
-  const setCustomizeEachDoor = useWardrobeStore((s) => s.setCustomizeEachDoor);
   const setSectionHingedDoorCount = useWardrobeStore(
     (s) => s.setSectionHingedDoorCount,
   );
@@ -1317,24 +1614,6 @@ function DoorsPanel() {
   const slidingMechanismDisplayList =
     slidingMechanisms.length > 0 ? slidingMechanisms : [INTERNAL_RENDER_FALLBACK];
   const slidingMechanismPickerReadOnly = slidingMechanisms.length === 0;
-
-  const panelIds = doors.doorPanelMaterialIds;
-  const allPanelsSameFinish = useMemo(
-    () => panelIds.length > 0 && panelIds.every((id) => id === panelIds[0]),
-    [panelIds],
-  );
-
-  const activePanelMaterialId = panelIds[0] ?? "";
-
-  const resolvedDoorMat = useMemo(
-    () => getMaterial(activePanelMaterialId, doorMaterials),
-    [activePanelMaterialId, doorMaterials],
-  );
-  const isGlassDoorSurface =
-    resolvedDoorMat.surfaceType === "mirror" ||
-    resolvedDoorMat.surfaceType === "frosted-glass" ||
-    resolvedDoorMat.surfaceType === "smoked-glass";
-  const showGrainToggle = doors.type !== "none" && !isGlassDoorSurface;
 
   const doorTypes: { id: DoorType; label: string; desc: string }[] = [
     { id: "none", label: "Open", desc: "No doors" },
@@ -1348,15 +1627,21 @@ function DoorsPanel() {
         <div className="cfg-label-row">
           <span className="cfg-label">Door Type</span>
           {doors.type !== "none" && (
-            <button className="cfg-toggle" onClick={toggleDoors}>
+            <button type="button" className="cfg-toggle" onClick={toggleDoors}>
               {showDoors ? "Hide" : "Show"}
             </button>
           )}
         </div>
+        <p className="cfg-hint" style={{ marginTop: 0 }}>
+          Door and drawer <strong>front laminates</strong> match the exterior material in{" "}
+          <strong>Materials</strong>. Open <strong>Wardrobe sheet layout</strong> from the canvas to adjust how
+          panels are grouped on sheets.
+        </p>
         <div className="door-cards">
           {doorTypes.map((dt) => (
             <button
               key={dt.id}
+              type="button"
               className={`door-card ${doors.type === dt.id ? "active" : ""}`}
               onClick={() => setDoorType(dt.id)}
             >
@@ -1409,99 +1694,35 @@ function DoorsPanel() {
         </>
       )}
 
-      {doors.type !== "none" && (
+      {doors.type === "sliding" && (
         <>
           <div className="cfg-divider" />
           <div className="cfg-group">
-            <span className="cfg-label">Door finish</span>
-            {!customizeEachDoor && (
-              <DoorFinishByBrand
-                doorMaterials={doorMaterials}
-                keyPrefix="door-all"
-                selectedId={allPanelsSameFinish && panelIds[0] ? panelIds[0] : ""}
-                onPick={(id) => {
-                  setAllDoorPanelMaterials(id);
-                  setCustomizeEachDoor(false);
-                }}
-              />
-            )}
-            <label className="cfg-toggle-row" style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={customizeEachDoor}
-                onChange={(e) => {
-                  const on = e.target.checked;
-                  setCustomizeEachDoor(on);
-                  if (!on && panelIds.length > 0) {
-                    setAllDoorPanelMaterials(panelIds[0]!);
-                    const g = doors.doorPanelGrainDirections[0] ?? doorGrain;
-                    setDoorGrain(g);
-                  }
-                }}
-              />
-              <span className="cfg-sublabel" style={{ margin: 0 }}>
-                Customize each door
-              </span>
-            </label>
-            {customizeEachDoor &&
-              panelIds.map((panelMatId, idx) => {
-                const panelMat = getMaterial(panelMatId, doorMaterials);
-                const panelIsGlass =
-                  panelMat.surfaceType === "mirror" ||
-                  panelMat.surfaceType === "frosted-glass" ||
-                  panelMat.surfaceType === "smoked-glass";
-                return (
-                  <div key={idx} className="cfg-group" style={{ marginTop: "12px" }}>
-                    <span className="cfg-sublabel" style={{ display: "block", marginBottom: "6px" }}>
-                      {doors.type === "hinged" ? `Door — section ${idx + 1}` : `Door panel ${idx + 1}`}
-                    </span>
-                    <DoorFinishByBrand
-                      doorMaterials={doorMaterials}
-                      keyPrefix={`door-p${idx}`}
-                      selectedId={panelMatId}
-                      onPick={(id) => setDoorPanelMaterial(idx, id)}
-                    />
-                    {showGrainToggle && !panelIsGlass && (
-                      <GrainToggle
-                        value={doors.doorPanelGrainDirections[idx] ?? doorGrain}
-                        onChange={(d) => setDoorPanelGrainDirection(idx, d)}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            {showGrainToggle && !customizeEachDoor && (
-              <GrainToggle value={doorGrain} onChange={setDoorGrain} />
-            )}
-          </div>
-          {doors.type === "sliding" && (
-            <div className="cfg-group">
-              <span className="cfg-label">Sliding mechanism</span>
-              <p className="cfg-hint" style={{ marginTop: 0 }}>
-                Track / roller system (admin: type “slide”, e.g. category “hardware”). Shown on the 3D preview.
+            <span className="cfg-label">Sliding mechanism</span>
+            <p className="cfg-hint" style={{ marginTop: 0 }}>
+              Track / roller system (admin: type “slide”, e.g. category “hardware”). Shown on the 3D preview.
+            </p>
+            {slidingMechanismPickerReadOnly && (
+              <p className="cfg-hint" style={{ marginBottom: "8px" }}>
+                Using the default track until you add slide-type materials to the catalog.
               </p>
-              {slidingMechanismPickerReadOnly && (
-                <p className="cfg-hint" style={{ marginBottom: "8px" }}>
-                  Using the default track until you add slide-type materials to the catalog.
-                </p>
-              )}
-              <div className="mat-grid">
-                {slidingMechanismDisplayList.map((mat) => (
-                  <button
-                    key={mat.id}
-                    type="button"
-                    disabled={slidingMechanismPickerReadOnly}
-                    className={`mat-swatch ${doors.slidingMechanismId === mat.id ? "selected" : ""}`}
-                    onClick={() => setSlidingMechanism(mat.id)}
-                    title={mat.name}
-                  >
-                    <SwatchCircle mat={mat} />
-                    <span className="mat-swatch-name">{mat.name}</span>
-                  </button>
-                ))}
-              </div>
+            )}
+            <div className="mat-grid">
+              {slidingMechanismDisplayList.map((mat) => (
+                <button
+                  key={mat.id}
+                  type="button"
+                  disabled={slidingMechanismPickerReadOnly}
+                  className={`mat-swatch ${doors.slidingMechanismId === mat.id ? "selected" : ""}`}
+                  onClick={() => setSlidingMechanism(mat.id)}
+                  title={mat.name}
+                >
+                  <SwatchCircle mat={mat} />
+                  <span className="mat-swatch-name">{mat.name}</span>
+                </button>
+              ))}
             </div>
-          )}
+          </div>
         </>
       )}
     </div>
@@ -1654,150 +1875,621 @@ function HandlesPanel() {
 
 /* ── Materials Panel ─────────────────────────────────────────────── */
 
+function mergeWardrobeMaterialPools(
+  primary: WardrobeMaterial[],
+  extra: WardrobeMaterial[],
+): WardrobeMaterial[] {
+  const byId = new Map<string, WardrobeMaterial>();
+  for (const m of primary) byId.set(m.id, m);
+  for (const m of extra) byId.set(m.id, m);
+  return [...byId.values()];
+}
+
 function MaterialsPanel() {
+  const admin = useResolvedAdmin();
   const frameMaterial = useWardrobeStore((s) => s.config.frameMaterial);
   const interiorMaterial = useWardrobeStore((s) => s.config.interiorMaterial);
   const frameGrain = useWardrobeStore((s) => s.config.frameGrainDirection ?? "horizontal");
   const interiorGrain = useWardrobeStore((s) => s.config.interiorGrainDirection ?? "horizontal");
-  const setFrameMaterial = useWardrobeStore((s) => s.setFrameMaterial);
+  const doorGrain = useWardrobeStore((s) => s.config.doorGrainDirection ?? "horizontal");
+  const doorsCfg = useWardrobeStore((s) => s.config.doors);
+  const frame = useWardrobeStore((s) => s.config.frame);
+  const sections = useWardrobeStore((s) => s.config.sections);
+  const customizeEachDoor = useWardrobeStore((s) => s.ui.customizeEachDoor);
+  const linkFinishes = useWardrobeStore((s) => s.ui.linkInteriorExteriorFinishes);
+
+  const setExteriorMaterial = useWardrobeStore((s) => s.setExteriorMaterial);
   const setInteriorMaterial = useWardrobeStore((s) => s.setInteriorMaterial);
-  const setFrameGrain = useWardrobeStore((s) => s.setFrameGrainDirection);
+  const setAllDoorPanelMaterials = useWardrobeStore((s) => s.setAllDoorPanelMaterials);
+  const setDoorPanelMaterial = useWardrobeStore((s) => s.setDoorPanelMaterial);
+  const setDoorPanelGrainDirection = useWardrobeStore((s) => s.setDoorPanelGrainDirection);
+  const setExteriorGrain = useWardrobeStore((s) => s.setExteriorGrainDirection);
   const setInteriorGrain = useWardrobeStore((s) => s.setInteriorGrainDirection);
-  const materials = useWardrobeStore((s) => s.availableMaterials);
+  const setCustomizeEachDoor = useWardrobeStore((s) => s.setCustomizeEachDoor);
+  const setLinkInteriorExteriorFinishes = useWardrobeStore((s) => s.setLinkInteriorExteriorFinishes);
+
+  const frameMaterials = useWardrobeStore((s) => s.availableMaterials);
+  const doorMaterials = useWardrobeStore((s) => s.availableDoorMaterials);
+
+  const exteriorMaterials = useMemo(
+    () => mergeWardrobeMaterialPools(frameMaterials, doorMaterials),
+    [frameMaterials, doorMaterials],
+  );
+
+  const [finishArea, setFinishArea] = useState<"exterior" | "interior">("exterior");
+  /** When per-panel customize is on: null = pick section/panel; number = edit that index. */
+  const [customizePanelIndex, setCustomizePanelIndex] = useState<number | null>(null);
+  const exteriorPanelId = "wardrobe-finishes-panel-exterior";
+  const interiorPanelId = "wardrobe-finishes-panel-interior";
+
+  const exteriorPanelsDifferFromBody =
+    doorsCfg.type !== "none" &&
+    doorsCfg.doorPanelMaterialIds.some((id) => id !== frameMaterial);
+
+  const hasInteriorRow = frameMaterials.length > 0;
+  const hasExteriorRow = exteriorMaterials.length > 0;
+
+  const doorPanelCount =
+    doorsCfg.type === "none"
+      ? 0
+      : wardrobeDoorPanelMaterialIdsLength(doorsCfg.type, frame.width, sections);
+
+  const doorFrontCustomizeEntries = useMemo(() => {
+    if (doorsCfg.type === "none") return [];
+    if (doorsCfg.type === "sliding") {
+      return Array.from({ length: doorPanelCount }, (_, i) => ({
+        flatIndex: i,
+        label: `Sliding panel ${i + 1}`,
+      }));
+    }
+    const entries: { flatIndex: number; label: string }[] = [];
+    let flat = 0;
+    sections.forEach((sec, sIdx) => {
+      const n = hingedDoorCountForSection(sec.hingedDoorCount);
+      for (let d = 0; d < n; d++) {
+        entries.push({
+          flatIndex: flat,
+          label:
+            n === 1
+              ? `Bay ${sIdx + 1} · ${sec.width} cm`
+              : `Bay ${sIdx + 1} · door ${d + 1} of ${n}`,
+        });
+        flat++;
+      }
+    });
+    return entries;
+  }, [doorsCfg.type, doorPanelCount, sections]);
+
+  const [browseCatalogExterior, setBrowseCatalogExterior] = useState<WardrobeMaterial[]>([]);
+  const [browseCatalogInterior, setBrowseCatalogInterior] = useState<WardrobeMaterial[]>([]);
+  const [browseCatalogLoading, setBrowseCatalogLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setBrowseCatalogLoading(true);
+      try {
+        const res = await api.getPublicMaterialTemplates();
+        const rows = (res.data ?? []) as PublicMaterialTemplateRow[];
+        const adminId = admin?.id ?? "public";
+        const ext: WardrobeMaterial[] = [];
+        const int: WardrobeMaterial[] = [];
+        const seenExt = new Set<string>();
+        const seenInt = new Set<string>();
+        for (const row of rows) {
+          const mat = mapTemplateRowToMaterial(row, adminId);
+          const exteriorMatOk =
+            isWardrobeBoardFinishMaterial(mat) || isWardrobeDoorFinishMaterial(mat);
+          const interiorMatOk = isWardrobeBoardFinishMaterial(mat);
+          if (!exteriorMatOk && !interiorMatOk) continue;
+          const swatches = materialsFromStore([mat], admin?.companyName);
+          const wm = swatches[0];
+          if (!wm) continue;
+          if (
+            exteriorMatOk &&
+            (wardrobeManufacturerRowForFramePool(wm) || wardrobeManufacturerRowForDoorPool(wm))
+          ) {
+            if (!seenExt.has(wm.id)) {
+              seenExt.add(wm.id);
+              ext.push(wm);
+            }
+          }
+          if (interiorMatOk && wardrobeManufacturerRowForFramePool(wm)) {
+            if (!seenInt.has(wm.id)) {
+              seenInt.add(wm.id);
+              int.push(wm);
+            }
+          }
+        }
+        if (!cancelled) {
+          setBrowseCatalogExterior(ext);
+          setBrowseCatalogInterior(int);
+        }
+      } catch (e) {
+        console.error("getPublicMaterialTemplates failed", e);
+        if (!cancelled) {
+          setBrowseCatalogExterior([]);
+          setBrowseCatalogInterior([]);
+        }
+      } finally {
+        if (!cancelled) setBrowseCatalogLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [admin?.id, admin?.companyName]);
+
+  useEffect(() => {
+    if (!customizeEachDoor || doorPanelCount === 0) {
+      setCustomizePanelIndex(null);
+      return;
+    }
+    if (customizePanelIndex !== null && customizePanelIndex >= doorPanelCount) {
+      setCustomizePanelIndex(null);
+    }
+  }, [customizeEachDoor, doorPanelCount, customizePanelIndex]);
+
+  const pickUniformExterior = (id: string) => {
+    setExteriorMaterial(id);
+    if (linkFinishes) {
+      setInteriorMaterial(id);
+      setInteriorGrain(frameGrain);
+    }
+  };
+
+  const pickInterior = (id: string) => {
+    setInteriorMaterial(id);
+    if (linkFinishes) {
+      setExteriorMaterial(id);
+      setExteriorGrain(interiorGrain);
+    }
+  };
+
+  const onExteriorGrainChange = (d: GrainDirection) => {
+    setExteriorGrain(d);
+    if (linkFinishes) setInteriorGrain(d);
+  };
+
+  const onInteriorGrainChange = (d: GrainDirection) => {
+    setInteriorGrain(d);
+    if (linkFinishes) setExteriorGrain(d);
+  };
 
   return (
-    <div className="panel-content">
-      {materials.length === 0 && (
-        <p className="cfg-sublabel" style={{ marginBottom: "12px" }}>
+    <div className="panel-content wardrobe-finishes-panel">
+      {!hasInteriorRow && !hasExteriorRow && (
+        <p className="cfg-sublabel wardrobe-finishes-empty-note">
           No materials in your account yet. Add finishes in the admin, or run the API seed so the default
           decor library loads automatically when your catalog is empty.
         </p>
       )}
-      <div className="cfg-group">
-        <span className="cfg-label">Frame (carcass) exterior</span>
-        <span className="cfg-sublabel">Visible sides of the wardrobe box</span>
-        <WardrobeFinishesByCategory
-          materials={materials}
-          keyPrefix="frame"
-          selectedId={frameMaterial}
-          onPick={setFrameMaterial}
-        />
-        <GrainToggle value={frameGrain} onChange={setFrameGrain} />
-      </div>
+      {(hasInteriorRow || hasExteriorRow) && (
+        <>
+          <p className="wardrobe-finishes-intro">
+            Choose <strong>Exterior</strong> (outside of the wardrobe, including <strong>door and drawer fronts</strong>){" "}
+            and <strong>Interior</strong> (inside the bays). Use <strong>Wardrobe sheet layout</strong> on the canvas to fine-tune
+            cuts and placement on boards.
+          </p>
 
-      <div className="cfg-divider" />
+          <label className="wardrobe-finishes-link-label">
+            <input
+              type="checkbox"
+              checked={linkFinishes}
+              onChange={(e) => setLinkInteriorExteriorFinishes(e.target.checked)}
+            />
+            <span>Use the same finish inside and out (updates both when you pick Exterior or Interior).</span>
+          </label>
 
-      <div className="cfg-group">
-        <span className="cfg-label">Interior (shelves &amp; sides)</span>
-        <span className="cfg-sublabel">Inside finish — often lighter than the frame</span>
-        <WardrobeFinishesByCategory
-          materials={materials}
-          keyPrefix="int"
-          selectedId={interiorMaterial}
-          onPick={setInteriorMaterial}
-        />
-        <GrainToggle value={interiorGrain} onChange={setInteriorGrain} />
-      </div>
+          <div className="wardrobe-finishes-area-nav">
+            <div className="wardrobe-finishes-tabs" role="tablist" aria-label="Wardrobe materials">
+              <button
+                type="button"
+                role="tab"
+                id="wardrobe-finishes-tab-exterior"
+                aria-selected={finishArea === "exterior"}
+                aria-controls={exteriorPanelId}
+                className={`wardrobe-finishes-tab ${finishArea === "exterior" ? "wardrobe-finishes-tab--active" : ""}`}
+                onClick={() => setFinishArea("exterior")}
+              >
+                Exterior
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="wardrobe-finishes-tab-interior"
+                aria-selected={finishArea === "interior"}
+                aria-controls={interiorPanelId}
+                className={`wardrobe-finishes-tab ${finishArea === "interior" ? "wardrobe-finishes-tab--active" : ""}`}
+                onClick={() => setFinishArea("interior")}
+              >
+                Interior
+              </button>
+            </div>
+            <div className="wardrobe-finishes-skip-row">
+              {finishArea === "exterior" ? (
+                <button
+                  type="button"
+                  className="wardrobe-finishes-skip-link"
+                  onClick={() => setFinishArea("interior")}
+                >
+                  Skip to Interior
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="wardrobe-finishes-skip-link"
+                  onClick={() => setFinishArea("exterior")}
+                >
+                  Skip to Exterior
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div
+            id={exteriorPanelId}
+            role="tabpanel"
+            aria-labelledby="wardrobe-finishes-tab-exterior"
+            hidden={finishArea !== "exterior"}
+            className="wardrobe-finishes-tab-panel"
+          >
+            {!hasExteriorRow ? (
+              <p className="cfg-hint wardrobe-finishes-section-desc">
+                No frame or door-finish catalogs loaded — add laminates in the admin.
+              </p>
+            ) : (
+              <section
+                className="wardrobe-finishes-section"
+                aria-labelledby="wardrobe-finishes-exterior-heading"
+              >
+                <h3 id="wardrobe-finishes-exterior-heading" className="wardrobe-finishes-section-title">
+                  <Box size={18} strokeWidth={2} aria-hidden />
+                  Exterior
+                </h3>
+                <p className="wardrobe-finishes-section-desc">
+                  Applies to outer carcass (sides, top, bottom, dividers), <strong>door fronts</strong>, and visible{" "}
+                  <strong>drawer fronts</strong>. Turn off per-section customization below to pick one exterior finish
+                  for the whole carcass and all fronts together.
+                </p>
+                {doorPanelCount > 0 && (
+                  <label className="wardrobe-finishes-link-label wardrobe-finishes-link-label--nested">
+                    <input
+                      type="checkbox"
+                      checked={customizeEachDoor}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setCustomizePanelIndex(null);
+                          setCustomizeEachDoor(true);
+                        } else {
+                          setCustomizePanelIndex(null);
+                          setAllDoorPanelMaterials(frameMaterial);
+                          setCustomizeEachDoor(false);
+                        }
+                      }}
+                    />
+                    <span>Customize each door / sliding panel (material and grain separately).</span>
+                  </label>
+                )}
+                {exteriorPanelsDifferFromBody && !customizeEachDoor && (
+                  <p className="cfg-hint" style={{ marginBottom: "0.75rem" }}>
+                    Some door panels use a different decor than this exterior pick — choose again here, enable per-door
+                    customization, or use <strong>Wardrobe sheet layout</strong> after loading a saved split.
+                  </p>
+                )}
+
+                {customizeEachDoor && doorPanelCount > 0 ? (
+                  customizePanelIndex === null ? (
+                    <div className="wardrobe-door-customize-pick">
+                      <h4 className="wardrobe-finishes-subheading">Door fronts — choose a door</h4>
+                      <p className="cfg-sublabel wardrobe-finishes-section-desc">
+                        {doorsCfg.type === "hinged"
+                          ? "Each hinged leaf is listed separately (e.g. both doors in a French-door bay)."
+                          : "Pick a sliding panel to change its finish."}{" "}
+                        Carcass sides and body stay on the main exterior finish — turn this option off to edit those.
+                      </p>
+                      <div className="wardrobe-door-customize-section-grid" role="list">
+                        {doorFrontCustomizeEntries.map(({ flatIndex, label }) => {
+                          const panelId =
+                            doorsCfg.doorPanelMaterialIds[flatIndex] ??
+                            doorsCfg.doorPanelMaterialIds[0] ??
+                            frameMaterial;
+                          const mat = exteriorMaterials.find((m) => m.id === panelId);
+                          return (
+                            <button
+                              key={flatIndex}
+                              type="button"
+                              role="listitem"
+                              className="wardrobe-door-customize-section-card"
+                              onClick={() => setCustomizePanelIndex(flatIndex)}
+                            >
+                              <span className="wardrobe-door-customize-section-card-title">{label}</span>
+                              <span className="wardrobe-door-customize-section-card-swatch">
+                                <SwatchCircle
+                                  mat={
+                                    mat ??
+                                    ({
+                                      id: panelId,
+                                      name: "—",
+                                      color: "#c8c4bc",
+                                      roughness: 0.5,
+                                      metalness: 0,
+                                      priceMultiplier: 1,
+                                    } as WardrobeMaterial)
+                                  }
+                                />
+                              </span>
+                              <span className="wardrobe-door-customize-section-card-finish">
+                                {mat?.name ?? "Finish"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="wardrobe-door-customize-edit">
+                      <button
+                        type="button"
+                        className="wardrobe-door-customize-back"
+                        onClick={() => setCustomizePanelIndex(null)}
+                      >
+                        ← All doors
+                      </button>
+                      {(() => {
+                        const i = customizePanelIndex!;
+                        const heading =
+                          doorFrontCustomizeEntries.find((e) => e.flatIndex === i)?.label ?? `Door ${i + 1}`;
+                        const panelId =
+                          doorsCfg.doorPanelMaterialIds[i] ??
+                          doorsCfg.doorPanelMaterialIds[0] ??
+                          frameMaterial;
+                        const panelGrain =
+                          doorsCfg.doorPanelGrainDirections?.[i] ?? doorGrain;
+                        const browseKey = `ext-panel-${i}`;
+                        return (
+                          <>
+                            <h4 className="wardrobe-finishes-subheading">{heading}</h4>
+                            <WardrobeFinishesByBrand
+                              materials={exteriorMaterials}
+                              keyPrefix={browseKey}
+                              selectedId={panelId}
+                              onPick={(id) => {
+                                setDoorPanelMaterial(i, id);
+                                if (linkFinishes) {
+                                  const st = useWardrobeStore.getState();
+                                  const g =
+                                    st.config.doors.doorPanelGrainDirections?.[i] ??
+                                    st.config.doorGrainDirection ??
+                                    st.config.frameGrainDirection ??
+                                    "horizontal";
+                                  setInteriorMaterial(id);
+                                  setInteriorGrain(g);
+                                }
+                              }}
+                              browseModalTitle={`${heading} — materials`}
+                              browseCatalogMaterials={browseCatalogExterior}
+                              browseCatalogLoading={browseCatalogLoading}
+                              browseCatalogSubtitle={WARDROBE_BROWSE_CATALOG_SUBTITLE}
+                            />
+                            <div className="wardrobe-finishes-grain-block">
+                              <span className="cfg-label wardrobe-finishes-sublabel">Grain (this front only)</span>
+                              <GrainToggle
+                                value={panelGrain}
+                                onChange={(d) => {
+                                  setDoorPanelGrainDirection(i, d);
+                                  if (linkFinishes) setInteriorGrain(d);
+                                }}
+                              />
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <WardrobeFinishesByBrand
+                      materials={exteriorMaterials}
+                      keyPrefix="ext"
+                      selectedId={frameMaterial}
+                      onPick={pickUniformExterior}
+                      browseModalTitle="All exterior materials"
+                      browseCatalogMaterials={browseCatalogExterior}
+                      browseCatalogLoading={browseCatalogLoading}
+                      browseCatalogSubtitle={WARDROBE_BROWSE_CATALOG_SUBTITLE}
+                    />
+                    <div className="wardrobe-finishes-grain-block">
+                      <span className="cfg-label wardrobe-finishes-sublabel">Grain (carcass + door fronts)</span>
+                      <GrainToggle value={frameGrain} onChange={onExteriorGrainChange} />
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+          </div>
+
+          <div
+            id={interiorPanelId}
+            role="tabpanel"
+            aria-labelledby="wardrobe-finishes-tab-interior"
+            hidden={finishArea !== "interior"}
+            className="wardrobe-finishes-tab-panel"
+          >
+            {!hasInteriorRow ? (
+              <p className="cfg-hint wardrobe-finishes-section-desc">
+                No interior catalog loaded — add materials in the admin.
+              </p>
+            ) : (
+              <section
+                className="wardrobe-finishes-section"
+                aria-labelledby="wardrobe-finishes-interior-heading"
+              >
+                <h3 id="wardrobe-finishes-interior-heading" className="wardrobe-finishes-section-title">
+                  <LayoutGrid size={18} strokeWidth={2} aria-hidden />
+                  Interior
+                </h3>
+                <p className="wardrobe-finishes-section-desc">
+                  Shelves, shoe-rack boards, drawer box parts, and other surfaces visible inside the bays — not door/drawer
+                  faces (those follow Exterior unless you link finishes above).
+                </p>
+                <WardrobeFinishesByBrand
+                  materials={frameMaterials}
+                  keyPrefix="int"
+                  selectedId={interiorMaterial}
+                  onPick={pickInterior}
+                  browseModalTitle="All interior materials"
+                  browseCatalogMaterials={browseCatalogInterior}
+                  browseCatalogLoading={browseCatalogLoading}
+                  browseCatalogSubtitle={WARDROBE_BROWSE_CATALOG_SUBTITLE}
+                />
+                <div className="wardrobe-finishes-grain-block">
+                  <span className="cfg-label wardrobe-finishes-sublabel">Grain direction</span>
+                  <GrainToggle value={interiorGrain} onChange={onInteriorGrainChange} />
+                </div>
+              </section>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
 
 /* ── Room Panel ──────────────────────────────────────────────────── */
 
-const WALL_PRESETS = [
-  { color: "#fafafa", label: "White" },
-  { color: "#e8e6e2", label: "Warm Gray" },
-  { color: "#d5d0c8", label: "Greige" },
-  { color: "#c8c0b4", label: "Linen" },
-  { color: "#b8c4c8", label: "Cool Blue" },
-  { color: "#c8d0c4", label: "Sage" },
-  { color: "#e0d4c8", label: "Sand" },
-  { color: "#d8d0d8", label: "Lavender" },
-];
-
 function RoomPanel() {
-  const wallColor = useWardrobeStore((s) => s.room.wallColor);
-  const floorStyle = useWardrobeStore((s) => s.room.floorStyle);
-  const setWallColor = useWardrobeStore((s) => s.setWallColor);
+  const lengthUnit = useWardrobeStore((s) => s.ui.lengthUnit);
+  const setLengthUnit = useWardrobeStore((s) => s.setLengthUnit);
+  const room = useWardrobeStore((s) => s.room);
+  const roomWidthM = room.roomWidthM ?? 3;
+  const roomDepthM = room.roomDepthM ?? 3;
+  const roomHeightM = room.roomHeightM ?? 2.8;
+  const setRoomWidthM = useWardrobeStore((s) => s.setRoomWidthM);
+  const setRoomDepthM = useWardrobeStore((s) => s.setRoomDepthM);
+  const setRoomHeightM = useWardrobeStore((s) => s.setRoomHeightM);
   const setFloorStyle = useWardrobeStore((s) => s.setFloorStyle);
+  const setPlannerFloorSurface = useWardrobeStore((s) => s.setPlannerFloorSurface);
+  const setPlannerWallCeilingSurface = useWardrobeStore((s) => s.setPlannerWallCeilingSurface);
+
+  const unitForSliders: Exclude<LengthUnit, "mm"> = lengthUnit === "mm" ? "cm" : lengthUnit;
 
   return (
-    <div className="panel-content">
+    <div className="panel-content wardrobe-preview-room-dims">
       <div className="cfg-group">
-        <span className="cfg-label">Wall Color</span>
-        <div className="room-wall-picker">
-          <input
-            type="color"
-            value={wallColor}
-            onChange={(e) => setWallColor(e.target.value)}
-            className="room-color-input"
-          />
-          <input
-            type="text"
-            value={wallColor}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (/^#[0-9a-fA-F]{6}$/.test(v)) setWallColor(v);
-            }}
-            className="room-color-hex"
-            spellCheck={false}
-          />
+        <div className="wardrobe-room-dim-heading">
+          <span className="wardrobe-room-dim-title">Dimensions</span>
+          <LengthUnitToggleButtons lengthUnit={unitForSliders} onChange={(u) => setLengthUnit(u)} />
         </div>
-        <div className="room-wall-presets">
-          {WALL_PRESETS.map((p) => (
-            <button
-              key={p.color}
-              className={`room-wall-swatch ${wallColor === p.color ? "active" : ""}`}
-              style={{ backgroundColor: p.color }}
-              onClick={() => setWallColor(p.color)}
-              title={p.label}
+        <span className="cfg-sublabel">
+          Preview room only — scales walls and floor. Wardrobe body sizes use Footprint and Frames.
+        </span>
+        <div className="room-sliders">
+          <label className="slider-row">
+            <span className="slider-label">Width</span>
+            <input
+              type="range"
+              min={metersToDisplay(ROOM_PLAN_MIN_M, unitForSliders)}
+              max={metersToDisplay(ROOM_PLAN_MAX_M, unitForSliders)}
+              step={unitForSliders === "in" ? 1 : 5}
+              value={metersToDisplay(roomWidthM, unitForSliders)}
+              onChange={(e) => {
+                const m = displayToMeters(Number(e.target.value), unitForSliders);
+                const w = Math.min(ROOM_PLAN_MAX_M, Math.max(ROOM_PLAN_MIN_M, m));
+                setRoomWidthM(w);
+              }}
             />
-          ))}
+            <span className="slider-value">{formatLengthLabel(roomWidthM, unitForSliders)}</span>
+          </label>
+          <label className="slider-row">
+            <span className="slider-label">Depth</span>
+            <input
+              type="range"
+              min={metersToDisplay(ROOM_PLAN_MIN_M, unitForSliders)}
+              max={metersToDisplay(ROOM_PLAN_MAX_M, unitForSliders)}
+              step={unitForSliders === "in" ? 1 : 5}
+              value={metersToDisplay(roomDepthM, unitForSliders)}
+              onChange={(e) => {
+                const m = displayToMeters(Number(e.target.value), unitForSliders);
+                const d = Math.min(ROOM_PLAN_MAX_M, Math.max(ROOM_PLAN_MIN_M, m));
+                setRoomDepthM(d);
+              }}
+            />
+            <span className="slider-value">{formatLengthLabel(roomDepthM, unitForSliders)}</span>
+          </label>
+          <label className="slider-row">
+            <span className="slider-label">Height</span>
+            <input
+              type="range"
+              min={metersToDisplay(ROOM_HEIGHT_MIN_M, unitForSliders)}
+              max={metersToDisplay(ROOM_HEIGHT_MAX_M, unitForSliders)}
+              step={unitForSliders === "in" ? 0.5 : 2}
+              value={metersToDisplay(roomHeightM, unitForSliders)}
+              onChange={(e) => {
+                const m = displayToMeters(Number(e.target.value), unitForSliders);
+                const h = Math.min(ROOM_HEIGHT_MAX_M, Math.max(ROOM_HEIGHT_MIN_M, m));
+                setRoomHeightM(h);
+              }}
+            />
+            <span className="slider-value">{formatLengthLabel(roomHeightM, unitForSliders)}</span>
+          </label>
         </div>
       </div>
 
-      <div className="cfg-divider" />
+      <div className="cfg-group" style={{ marginTop: 14 }}>
+        <span className="cfg-label">Floor appearance</span>
+        <span className="cfg-sublabel">Preview room floor in 3D</span>
+        <PlannerFloorSurfaceControls
+          presetVariant="kitchen-grid"
+          floorStyle={room.floorStyle}
+          mode={room.floorMaterialMode}
+          textureUrl={room.floorCustomTextureUrl}
+          uvRotationDeg={room.floorUvRotationDeg}
+          textureStartSide={room.floorTextureStartSide}
+          layoutPattern={room.floorLayoutPattern}
+          tileWcm={room.floorTileWidthCm}
+          tileHcm={room.floorTileHeightCm}
+          groutCm={room.floorTileGroutCm}
+          groutColor={room.floorTileGroutColor}
+          onPresetPick={(style) => setFloorStyle(style)}
+          onPatch={(patch) => setPlannerFloorSurface(patch)}
+        />
+      </div>
 
-      <div className="cfg-group">
-        <span className="cfg-label">Floor</span>
-        <span className="cfg-sublabel">
-          Neutral preview — no preset wood/laminate catalog here. Wardrobe finishes come from the Finishes tab
-          (admin materials).
-        </span>
-        <div className="room-floor-grid">
-          <FloorStyleSwatch
-            style="laminate-soft-beige"
-            label="Neutral"
-            selected={floorStyle === "laminate-soft-beige"}
-            onClick={() => setFloorStyle("laminate-soft-beige")}
-          />
-        </div>
+      <div className="cfg-group" style={{ marginTop: 14 }}>
+        <span className="cfg-label">Walls & ceiling</span>
+        <span className="cfg-sublabel">Room preview — textures persist with the design</span>
+        <PlannerInteriorSurfaceControls
+          title="Walls"
+          prefix="wall"
+          mode={room.wallMaterialMode}
+          textureUrl={room.wallCustomTextureUrl}
+          uvRepeatX={room.wallUvRepeatX}
+          uvRepeatY={room.wallUvRepeatY}
+          uvRotationDeg={room.wallUvRotationDeg}
+          tileWcm={room.wallTileWidthCm}
+          tileHcm={room.wallTileHeightCm}
+          groutCm={room.wallTileGroutCm}
+          groutColor={room.wallTileGroutColor}
+          onPatch={(patch) => setPlannerWallCeilingSurface(patch)}
+        />
+        <PlannerInteriorSurfaceControls
+          title="Ceiling"
+          prefix="ceiling"
+          mode={room.ceilingMaterialMode}
+          textureUrl={room.ceilingCustomTextureUrl}
+          uvRepeatX={room.ceilingUvRepeatX}
+          uvRepeatY={room.ceilingUvRepeatY}
+          uvRotationDeg={room.ceilingUvRotationDeg}
+          tileWcm={room.ceilingTileWidthCm}
+          tileHcm={room.ceilingTileHeightCm}
+          groutCm={room.ceilingTileGroutCm}
+          groutColor={room.ceilingTileGroutColor}
+          onPatch={(patch) => setPlannerWallCeilingSurface(patch)}
+        />
       </div>
     </div>
-  );
-}
-
-function FloorStyleSwatch({
-  style,
-  label,
-  selected,
-  onClick,
-}: {
-  style: FloorStyle;
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  const dataUrl = useMemo(() => createLaminateThumbnailDataUrl(style, 88, 56), [style]);
-  return (
-    <button
-      className={`room-floor-swatch ${selected ? "selected" : ""}`}
-      onClick={onClick}
-      title={label}
-    >
-      <img src={dataUrl} alt={label} className="room-floor-swatch-preview" />
-      <span className="room-floor-swatch-label">{label}</span>
-    </button>
   );
 }
 
@@ -1807,6 +2499,7 @@ function GrainToggle({ value, onChange }: { value: GrainDirection; onChange: (d:
   const next: GrainDirection = value === "horizontal" ? "vertical" : "horizontal";
   return (
     <button
+      type="button"
       className="cfg-chip"
       onClick={() => onChange(next)}
       title="Change direction"

@@ -27,7 +27,8 @@ export default function AIChat({ onAction, currentObjects, dimensionUnit, adminS
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "Hello! I'm your AI design assistant. I can help you create furniture designs. Try saying things like 'Create a blue rectangle 100cm wide and 50cm tall' or 'Add a circular table with 60cm diameter'.",
+      content:
+        "Hello! I'm Tunzone's chat — here to help you design furniture in this editor. Try things like 'Create a blue rectangle 100 cm wide and 50 cm tall' or 'Add a circular table 60 cm across.'",
       timestamp: new Date(),
     },
   ]);
@@ -67,7 +68,7 @@ export default function AIChat({ onAction, currentObjects, dimensionUnit, adminS
         },
         body: JSON.stringify({
           adminSlug,
-          messages: messages.map((m) => ({
+          messages: [...messages, userMessage].map((m) => ({
             role: m.role,
             content: m.content,
           })),
@@ -104,8 +105,13 @@ export default function AIChat({ onAction, currentObjects, dimensionUnit, adminS
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      // If API key is not configured, don't try to process actions
-      if (data.action === "info" && data.message?.includes("API key")) {
+      // Service unavailable / upstream errors: message only, no canvas actions
+      if (
+        data.action === "info" &&
+        (data.code === "SERVICE_UNAVAILABLE" ||
+          data.code === "UPSTREAM_ERROR" ||
+          data.code === "INTERNAL_ERROR")
+      ) {
         return;
       }
 
@@ -141,9 +147,7 @@ export default function AIChat({ onAction, currentObjects, dimensionUnit, adminS
       console.error("Error sending message:", error);
       const errorMessage: ChatMessage = {
         role: "assistant",
-        content: error instanceof Error 
-          ? `Sorry, I encountered an error: ${error.message}. Please check your API configuration and try again.`
-          : "Sorry, I encountered an error. Please check your API configuration and try again.",
+        content: "Something went wrong. Please try again in a moment.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -164,7 +168,7 @@ export default function AIChat({ onAction, currentObjects, dimensionUnit, adminS
       <button
         onClick={() => setIsOpen(true)}
         className="fixed bottom-6 right-6 w-14 h-14 bg-[var(--primary)] text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center z-50 hover:scale-110"
-        aria-label="Open AI Chat"
+        aria-label="Open Tunzone chat"
       >
         <MessageSquare className="w-6 h-6" />
       </button>
@@ -177,7 +181,7 @@ export default function AIChat({ onAction, currentObjects, dimensionUnit, adminS
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <Bot className="w-5 h-5 text-[var(--primary)]" />
-            AI Design Assistant
+            Tunzone chat
           </CardTitle>
           <button
             onClick={() => setIsOpen(false)}

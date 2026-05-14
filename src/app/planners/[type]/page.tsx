@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
+import clsx from "clsx";
 import { useParams, notFound } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getPlannerConfig } from "../config";
@@ -8,6 +9,7 @@ import { PlannerTypeProvider } from "../../planner/context";
 import { usePlannerStore } from "../../planner/store/usePlannerStore";
 import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
+import { useApplyInteriorDesignPlan } from "../../planner/utils/useApplyInteriorDesignPlan";
 import Sidebar from "../../planner/components/Sidebar";
 import TopBar from "../../planner/components/TopBar";
 import RoomDesigner from "../../planner/components/RoomDesigner";
@@ -120,13 +122,43 @@ const CustomDesignPlannerLayout = dynamic(
   }
 );
 
+const InteriorDesignLayout = dynamic(
+  () => import("../../planner/interior-design/InteriorDesignLayout"),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          color: "#999",
+          fontSize: 14,
+        }}
+      >
+        Loading AI Interior Designer...
+      </div>
+    ),
+  }
+);
 
-export default function DynamicPlannerPage() {
+
+export default function DynamicPlannerPageWrapper() {
+  return (
+    <Suspense>
+      <DynamicPlannerPage />
+    </Suspense>
+  );
+}
+
+function DynamicPlannerPage() {
   const params = useParams();
   const type = params.type as string;
   const config = getPlannerConfig(type);
   const initPlanner = usePlannerStore((s) => s.initPlanner);
   const fetchCatalog = usePlannerStore((s) => s.fetchCatalog);
+  const syncRoomSurfaceTextures = usePlannerStore((s) => s.syncRoomSurfaceTextures);
   const kitchenSetupComplete = usePlannerStore((s) => s.kitchenSetupComplete);
   const { initializeStore, initialized } = useStore();
   const admin = useResolvedAdmin();
@@ -160,6 +192,13 @@ export default function DynamicPlannerPage() {
     fetchCatalog,
   ]);
 
+  useEffect(() => {
+    if (!initialized) return;
+    syncRoomSurfaceTextures();
+  }, [initialized, syncRoomSurfaceTextures]);
+
+  useApplyInteriorDesignPlan(mounted && initialized);
+
   if (!config) {
     notFound();
   }
@@ -180,12 +219,15 @@ export default function DynamicPlannerPage() {
     return <CustomDesignPlannerLayout />;
   }
 
+  if (config.customLayout && type === "interior-design") {
+    return <InteriorDesignLayout />;
+  }
+
   if (!mounted) {
     return (
-      <div className="planner-layout">
+      <div className={clsx("planner-layout", type === "outdoor" && "planner-layout--outdoor")}>
         <aside className="planner-sidebar" />
-        <div className="planner-main">
-          <div className="planner-topbar" />
+        <TopBar>
           <div
             className="planner-canvas-wrapper"
             style={{
@@ -198,7 +240,7 @@ export default function DynamicPlannerPage() {
           >
             Loading {config.name}...
           </div>
-        </div>
+        </TopBar>
       </div>
     );
   }
@@ -216,10 +258,9 @@ export default function DynamicPlannerPage() {
       <PlannerTypeProvider config={config}>
         <AIPlannerShell>
           <Sidebar />
-          <div className="planner-ai-main">
-            <TopBar />
+          <TopBar>
             <CanvasScene />
-          </div>
+          </TopBar>
         </AIPlannerShell>
         <RoomDesigner />
       </PlannerTypeProvider>
@@ -228,12 +269,11 @@ export default function DynamicPlannerPage() {
 
   return (
     <PlannerTypeProvider config={config}>
-      <div className="planner-layout">
+      <div className={clsx("planner-layout", type === "outdoor" && "planner-layout--outdoor")}>
         <Sidebar />
-        <div className="planner-main">
-          <TopBar />
+        <TopBar>
           <CanvasScene />
-        </div>
+        </TopBar>
         <RoomDesigner />
       </div>
     </PlannerTypeProvider>

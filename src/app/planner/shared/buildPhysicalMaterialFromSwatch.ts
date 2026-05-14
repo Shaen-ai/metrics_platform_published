@@ -41,10 +41,31 @@ export function proxyTextureUrl(url: string): string {
       return url;
     }
     const apiOrigin = new URL(publicApiUrl).origin;
-    if (parsed.origin === apiOrigin || parsed.origin === window.location.origin) {
+
+    if (typeof window !== "undefined" && parsed.origin === apiOrigin) {
+      // Same pattern as `plannerModelUrl`: site-relative + Next rewrites → API so WebGL textures
+      // are same-origin (e.g. dev :3001 vs API :8000). Also applies to `/api/image-proxy`.
+      if (
+        parsed.pathname.startsWith("/storage/") ||
+        parsed.pathname.startsWith("/files/") ||
+        parsed.pathname === "/api/image-proxy"
+      ) {
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    }
+
+    if (
+      parsed.origin === apiOrigin ||
+      (typeof window !== "undefined" && parsed.origin === window.location.origin)
+    ) {
       return url;
     }
-    return `${publicApiUrl}/image-proxy?url=${encodeURIComponent(url)}`;
+
+    const enc = encodeURIComponent(url);
+    if (typeof window !== "undefined") {
+      return `/api/image-proxy?url=${enc}`;
+    }
+    return `${publicApiUrl}/image-proxy?url=${enc}`;
   } catch {
     return url;
   }

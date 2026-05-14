@@ -24,6 +24,7 @@ import type { KitchenConfig } from "@/app/planner/kitchen/types";
 import { api, ApiNetworkError } from "./api";
 import { normalizeApiModule } from "./normalizeApiModule";
 import { mapTemplateRowToMaterial, type PublicMaterialTemplateRow } from "./materialTemplateToMaterial";
+import { buildDefaultPlannerLaminates } from "./defaultPlannerMaterials";
 import { getPublishedAdminSlug } from "./tenant";
 
 interface StoreState {
@@ -80,6 +81,18 @@ interface StoreState {
   initializeStore: (adminSlug?: string) => Promise<void>;
 }
 
+async function materialsFromTemplatesOrDefaults(adminId: string): Promise<Material[]> {
+  try {
+    const tplRes = await api.getPublicMaterialTemplates();
+    const rows = (tplRes.data as PublicMaterialTemplateRow[]) ?? [];
+    const mapped = rows.map((row) => mapTemplateRowToMaterial(row, adminId));
+    if (mapped.length > 0) return mapped;
+  } catch {
+    /* optional */
+  }
+  return buildDefaultPlannerLaminates(adminId);
+}
+
 function lineTotal(line: CartLine): number {
   if (line.kind === "catalog") return line.item.price * line.quantity;
   return line.price * line.quantity;
@@ -112,13 +125,7 @@ export const useStore = create<StoreState>()(
           const admin = adminRes.data as Admin;
           let materials = (materialsRes.data as Material[]) ?? [];
           if (materials.length === 0) {
-            try {
-              const tplRes = await api.getPublicMaterialTemplates();
-              const rows = (tplRes.data as PublicMaterialTemplateRow[]) ?? [];
-              materials = rows.map((row) => mapTemplateRowToMaterial(row, admin.id));
-            } catch {
-              /* catalog optional */
-            }
+            materials = await materialsFromTemplatesOrDefaults(admin.id);
           }
           const rawModules = (modulesRes.data as Record<string, unknown>[]) ?? [];
           set({
@@ -136,8 +143,22 @@ export const useStore = create<StoreState>()(
           } else {
             console.error("Failed to initialize store from API:", e);
           }
-          /** Unblocks catalog routes that wait on `initialized` (detail page, 3D strip). */
-          set({ initialized: true });
+          /** Still load templates or starter laminates so planners are usable offline. */
+          let admin = get().admin;
+          try {
+            const adminRes = await api.getAdmin(resolvedSlug);
+            admin = adminRes.data as Admin;
+          } catch {
+            /* keep existing bootstrap/store admin when possible */
+          }
+          const bindId = admin?.id ?? resolvedSlug;
+          const materials = await materialsFromTemplatesOrDefaults(bindId);
+          set({
+            ...get(),
+            ...(admin ? { admin } : {}),
+            materials,
+            initialized: true,
+          });
         }
       },
 

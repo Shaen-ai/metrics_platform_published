@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Box, Loader2 } from "lucide-react";
 import { toRelativeStorageUrl } from "@/lib/utils";
@@ -15,6 +15,13 @@ import { useTranslation } from "@/hooks/useTranslation";
 const WHEEL_BURST_IDLE_MS = 180;
 /** Approx. vertical wheel “pixels” per burst devoted to zoom before the page scrolls. */
 const SCROLL_ZOOM_BURST_PX = 84;
+
+/**
+ * Fabric tiling on catalog GLBs (`model-viewer` KHR_texture_transform scale).
+ * Larger scale → more repeats → smaller quilting on the mesh (aligned loosely with planner `FALLBACK_UPHOLSTERY_TILE_CM`).
+ */
+const FABRIC_TEXTURE_SCALE_U = 32;
+const FABRIC_TEXTURE_SCALE_V = 28;
 
 function effectiveWheelDeltaY(e: WheelEvent): number {
   if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 16;
@@ -43,6 +50,7 @@ export default function CatalogModelViewer({
   fallbackImage,
   listingFraming = "compact",
   scrollFriendly = false,
+  fabricTextureUrl,
 }: {
   src: string;
   alt: string;
@@ -51,9 +59,14 @@ export default function CatalogModelViewer({
   listingFraming?: CatalogListingFraming;
   /** Hybrid wheel: small zoom budget then scroll the page (catalog tiles). */
   scrollFriendly?: boolean;
+  /** When set, override all non-transparent GLB mesh materials with this texture URL. */
+  fabricTextureUrl?: string;
 }) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
+  const mvRef = useRef<ModelViewerFramingSubset | null>(null);
+  const prevFabricTextureRef = useRef<string | undefined>(undefined);
+  const originalMaterialsRef = useRef<Map<object, { texture: unknown; factor: [number, number, number, number] }>>(new Map());
   const framingRef = useRef(listingFraming);
   framingRef.current = listingFraming;
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
@@ -196,6 +209,7 @@ export default function CatalogModelViewer({
 
         mv.addEventListener("error", onError);
         mv.addEventListener("load", onLoad);
+        mvRef.current = mv;
       })
       .catch(() => {
         if (!cancelled) setStatus("failed");
@@ -211,10 +225,97 @@ export default function CatalogModelViewer({
       }
       wheelTarget = null;
       wheelHandler = null;
+      mvRef.current = null;
+      prevFabricTextureRef.current = undefined;
+      originalMaterialsRef.current.clear();
       mv = null;
       if (container) container.innerHTML = "";
     };
   }, [resolvedSrc, alt, listingFraming, scrollFriendly]);
+
+  // Apply fabric texture override to all eligible model-viewer materials.
+  useEffect(() => {
+    const mv = mvRef.current;
+    if (!mv || status !== "ready") return;
+
+    const prev = prevFabricTextureRef.current;
+    prevFabricTextureRef.current = fabricTextureUrl;
+
+    // If no texture is selected and none was ever applied, leave the model untouched.
+    if (!fabricTextureUrl && !prev) return;
+
+    let cancelled = false;
+
+    const applyTexture = async () => {
+      try {
+        type PbrMetallicRoughness = {
+          baseColorFactor: [number, number, number, number];
+          setBaseColorFactor: (f: [number, number, number, number]) => void;
+          baseColorTexture: {
+            texture: { sampler: { setScale: (s: { u: number; v: number }) => void } } | null;
+            setTexture: (t: unknown) => void;
+          };
+        };
+        type MvMaterial = { name?: string; pbrMetallicRoughness: PbrMetallicRoughness };
+        type MvEl = {
+          model?: { materials?: MvMaterial[] };
+          createTexture: (url: string) => Promise<unknown>;
+        };
+
+        const mvEl = mv as unknown as MvEl;
+        const materials = mvEl.model?.materials;
+        if (!materials?.length) return;
+
+        if (!fabricTextureUrl) {
+          // User deselected — restore each material's original texture + factor.
+          for (const mat of materials) {
+            const orig = originalMaterialsRef.current.get(mat);
+            if (!orig) continue;
+            try {
+              mat.pbrMetallicRoughness.baseColorTexture.setTexture(orig.texture);
+              mat.pbrMetallicRoughness.setBaseColorFactor(orig.factor);
+            } catch { /* ignore */ }
+          }
+          originalMaterialsRef.current.clear();
+          return;
+        }
+
+        // Snapshot original state the first time we apply a texture.
+        if (originalMaterialsRef.current.size === 0) {
+          for (const mat of materials) {
+            const pbr = mat.pbrMetallicRoughness;
+            originalMaterialsRef.current.set(mat, {
+              texture: pbr.baseColorTexture.texture,
+              factor: [...pbr.baseColorFactor] as [number, number, number, number],
+            });
+          }
+        }
+
+        const texture = await mvEl.createTexture(fabricTextureUrl);
+        if (cancelled) return;
+
+        for (const mat of materials) {
+          const n = (mat.name ?? "").toLowerCase();
+          if (/glass|mirror|chrome|metal/.test(n)) continue;
+          const slot = mat.pbrMetallicRoughness.baseColorTexture;
+          slot.setTexture(texture);
+          mat.pbrMetallicRoughness.setBaseColorFactor([1, 1, 1, 1]);
+          // UV tiling: model-viewer maps sampler.setScale → THREE.Texture.repeat (not `.transform`, which does not exist on TextureInfo).
+          try {
+            slot.texture?.sampler.setScale({ u: FABRIC_TEXTURE_SCALE_U, v: FABRIC_TEXTURE_SCALE_V });
+          } catch { /* ignore */ }
+        }
+      } catch {
+        // model-viewer material API unavailable or non-GLB model — silently ignore.
+      }
+    };
+
+    void applyTexture();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fabricTextureUrl, status]);
 
   if (status === "failed") {
     if (fallbackImage) {

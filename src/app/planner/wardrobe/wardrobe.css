@@ -448,6 +448,258 @@
   line-height: 1.5;
 }
 
+/* ── Finishes tab (carcass + interior) ──────────────────────────── */
+
+.wardrobe-finishes-panel .wardrobe-finishes-empty-note {
+  margin-bottom: 16px;
+}
+
+.wardrobe-finishes-intro {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0 0 20px;
+}
+
+.wardrobe-finishes-intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.wardrobe-finishes-link-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.wardrobe-finishes-link-label input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.wardrobe-finishes-link-label--nested {
+  margin-bottom: 14px;
+}
+
+.wardrobe-finishes-subheading {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 18px 0 8px;
+  color: var(--text);
+}
+
+.wardrobe-door-customize-pick {
+  margin-top: 4px;
+}
+
+.wardrobe-door-customize-section-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wardrobe-door-customize-section-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.wardrobe-door-customize-section-card:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.03));
+  border-color: var(--border);
+}
+
+.wardrobe-door-customize-section-card-title {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wardrobe-door-customize-section-card-finish {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.wardrobe-door-customize-section-card-swatch {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+}
+
+.wardrobe-door-customize-section-card-swatch .swatch-circle {
+  width: 40px;
+  height: 40px;
+}
+
+.wardrobe-door-customize-back {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wardrobe-door-customize-back:hover {
+  color: var(--text);
+}
+
+.wardrobe-door-customize-edit {
+  margin-top: 4px;
+}
+
+.wardrobe-finishes-section {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 16px 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.wardrobe-finishes-section:last-child {
+  margin-bottom: 0;
+}
+
+.wardrobe-finishes-section-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  text-transform: none;
+}
+
+.wardrobe-finishes-section-title svg {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.wardrobe-finishes-section-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.wardrobe-finishes-section .wardrobe-finish-cat:first-of-type {
+  margin-top: 0;
+}
+
+.wardrobe-finishes-grain-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.wardrobe-finishes-sublabel {
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.wardrobe-finishes-area-nav {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--sidebar-bg);
+  padding: 4px 0 14px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.wardrobe-finishes-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.wardrobe-finishes-tab {
+  flex: 1;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--surface);
+  transition: background var(--transition), color var(--transition), border-color var(--transition),
+    box-shadow var(--transition);
+}
+
+.wardrobe-finishes-tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.wardrobe-finishes-tab--active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.wardrobe-finishes-tab-panel {
+  padding-top: 4px;
+}
+
+.wardrobe-finishes-skip-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.wardrobe-finishes-skip-link {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wardrobe-finishes-skip-link:hover {
+  color: var(--primary-hover);
+}
+
+.wardrobe-finishes-brand-header {
+  width: 100%;
+}
+
 /* ── Config Groups ────────────────────────────────────────────────── */
 
 .cfg-group {
@@ -614,6 +866,84 @@
   background: var(--text);
   color: #fff;
   border-color: var(--text);
+}
+
+/* ── Wardrobe footprint (layout presets) ───────────────────────────── */
+
+.wardrobe-footprint-section .cfg-sublabel strong {
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.wardrobe-footprint-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (min-width: 380px) {
+  .wardrobe-footprint-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.wardrobe-footprint-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition),
+    background var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+
+.wardrobe-footprint-card:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.wardrobe-footprint-card.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+  background: var(--primary-light);
+}
+
+.wardrobe-footprint-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.wardrobe-footprint-card-desc {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.wardrobe-footprint-walkin-sub {
+  margin-top: 14px;
+}
+
+.wardrobe-footprint-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wardrobe-footprint-bridge {
+  margin-top: 14px;
 }
 
 /* ── Slider ──────────────────────────────────────────────────────── */
@@ -1404,7 +1734,7 @@
 .wardrobe-door-material-modal-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
   background: var(--surface, #fff);
@@ -1412,6 +1742,11 @@
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+.wardrobe-door-material-modal-heading {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .wardrobe-door-material-modal-title {
@@ -1499,4 +1834,57 @@
   .wardrobe-door-material-modal-grid {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
+}
+
+/* Preview room dimensions — parity with room planner sliders */
+.wardrobe-preview-room-dims .wardrobe-room-dim-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.wardrobe-preview-room-dims .wardrobe-room-dim-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+}
+
+.wardrobe-preview-room-dims .room-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wardrobe-preview-room-dims .slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.wardrobe-preview-room-dims .slider-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  width: 42px;
+  flex-shrink: 0;
+}
+
+.wardrobe-preview-room-dims .slider-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  accent-color: #e8772e;
+  cursor: pointer;
+}
+
+.wardrobe-preview-room-dims .slider-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a1a;
+  width: 52px;
+  text-align: right;
+  flex-shrink: 0;
 }

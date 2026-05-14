@@ -315,6 +315,47 @@ export const roomTemplates: RoomTemplate[] = [
     },
   },
 
+  // ── Outdoor / patio ─────────────────────────────────────
+  {
+    id: "outdoor-deck-m",
+    name: "Medium patio",
+    description: "Typical terrace — pairs well with dining and lounge sets",
+    plannerTypes: ["outdoor"],
+    room: {
+      width: 8,
+      depth: 6,
+      height: 2.8,
+      floorStyle: "laminate-weathered-oak",
+      openings: [],
+    },
+  },
+  {
+    id: "outdoor-deck-s",
+    name: "Compact deck",
+    description: "Small balcony or nook",
+    plannerTypes: ["outdoor"],
+    room: {
+      width: 5,
+      depth: 4,
+      height: 2.8,
+      floorStyle: "laminate-natural-oak",
+      openings: [],
+    },
+  },
+  {
+    id: "outdoor-deck-l",
+    name: "Large terrace",
+    description: "Spacious garden lounge area",
+    plannerTypes: ["outdoor"],
+    room: {
+      width: 11,
+      depth: 9,
+      height: 2.8,
+      floorStyle: "laminate-coastal-oak",
+      openings: [],
+    },
+  },
+
   // ── Custom ──────────────────────────────────────────────
   {
     id: "custom",

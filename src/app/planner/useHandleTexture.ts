@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import * as THREE from "three";
+import { proxyTextureUrl } from "./shared/buildPhysicalMaterialFromSwatch";
 
 /**
  * Loads a catalog handle `imageUrl` for meshPhysicalMaterial.map.
@@ -20,7 +21,8 @@ export function useHandleTexture(imageUrl: string | undefined): THREE.Texture | 
     }
     let cancelled = false;
     const loader = new THREE.TextureLoader();
-    loader.load(imageUrl, (t) => {
+    const src = proxyTextureUrl(imageUrl);
+    loader.load(src, (t) => {
       if (cancelled) {
         t.dispose();
         return;

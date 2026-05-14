@@ -5,6 +5,7 @@ import type {
   DoorType,
   WardrobeDoorConfig,
   WardrobeConfig,
+  WardrobeSection,
   GrainDirection,
   ShelfDepthPlacement,
 } from "./types";
@@ -202,6 +203,40 @@ export function totalInteriorSectionWidthsCm(frameWidthCm: number, sectionCount:
   return Math.round((interior - dividerSpace) * 10) / 10;
 }
 
+/**
+ * Keeps bay proportions while retargeting interior widths to a new frame width
+ * (used when a wall run is physically shorter than the configured module width).
+ */
+export function scaleSectionsForFrameWidth(
+  sections: WardrobeSection[],
+  newFrameWidthCm: number,
+  oldFrameWidthCm: number,
+): WardrobeSection[] {
+  const T = PANEL_THICKNESS;
+  const n = sections.length;
+  if (n === 0) return sections;
+
+  const oldInterior = oldFrameWidthCm - 2 * T;
+  const newInterior = newFrameWidthCm - 2 * T;
+  const dividerCm = (n - 1) * T;
+  const oldTarget = Math.max(0.1, oldInterior - dividerCm);
+  const newTarget = Math.max(SECTION_MIN_WIDTH_CM * n, newInterior - dividerCm);
+
+  const sumOld = sections.reduce((s, sec) => s + sec.width, 0);
+  if (sumOld < 1e-6) return sections;
+
+  const r = newTarget / sumOld;
+  const next = sections.map((sec) => ({
+    ...sec,
+    width: Math.max(SECTION_MIN_WIDTH_CM, Math.round(sec.width * r * 10) / 10),
+  }));
+
+  let used = next.slice(0, -1).reduce((s, sec) => s + sec.width, 0);
+  const lastW = Math.max(SECTION_MIN_WIDTH_CM, Math.round((newTarget - used) * 10) / 10);
+  next[n - 1] = { ...next[n - 1]!, width: lastW };
+  return next;
+}
+
 /** Left edge of section `sectionIndex` (cm from wardrobe outer left, 0). */
 export function sectionLeftEdgeCm(sections: { width: number }[], sectionIndex: number): number {
   let x = PANEL_THICKNESS;
@@ -390,6 +425,9 @@ export interface WardrobeMaterial {
   materialTypes?: string[];
   /** From `category` / `categories[0]` — used to group swatches in the sidebar. */
   categoryKey?: string;
+  /** Upholstery swatch — real width/height of motif for 3D tiling (cm). */
+  textureWidthCm?: number | null;
+  textureHeightCm?: number | null;
   /**
    * Decor brand (e.g. Egger) from the catalog `manufacturer` field, or the admin
    * company when the row has no brand — used for the Door finish brand filter.
@@ -444,15 +482,181 @@ export function getMaterial(id: string, extraMaterials?: WardrobeMaterial[]): Wa
   return INTERNAL_RENDER_FALLBACK;
 }
 
+function wardrobeMaterialTypeSlugsFromSwatch(m: WardrobeMaterial): string[] {
+  if (m.materialTypes?.length) {
+    return m.materialTypes.map((t) => String(t).toLowerCase().trim()).filter(Boolean);
+  }
+  if (typeof m.materialType === "string" && m.materialType.trim() !== "") {
+    return [m.materialType.toLowerCase().trim()];
+  }
+  return [];
+}
+
+/** Manufacturer-catalog row → include in wardrobe carcass/frame pickers (& exterior pool). */
+export function wardrobeManufacturerRowForFramePool(m: WardrobeMaterial): boolean {
+  if (m.id === INTERNAL_RENDER_FALLBACK.id) return false;
+  return wardrobeMaterialTypeSlugsFromSwatch(m).some((t) =>
+    ["laminate", "mdf", "wood"].includes(t),
+  );
+}
+
+/** Manufacturer-catalog row → include in door / mechanism picker pools where applicable. */
+export function wardrobeManufacturerRowForDoorPool(m: WardrobeMaterial): boolean {
+  if (m.id === INTERNAL_RENDER_FALLBACK.id) return false;
+  return wardrobeMaterialTypeSlugsFromSwatch(m).some((t) =>
+    ["laminate", "mdf", "wood", "slide", "hinge"].includes(t),
+  );
+}
+
+/** After admin catalog loads, replace unknown finish ids so UI + PBR resolve real swatches (kitchen parity). */
+export function clampWardrobeConfigMaterialsToAvailable(
+  config: WardrobeConfig,
+  frameMaterials: WardrobeMaterial[],
+  doorMaterials: WardrobeMaterial[],
+): WardrobeConfig {
+  let next = config;
+
+  if (frameMaterials.length > 0) {
+    const frameIds = new Set(frameMaterials.map((m) => m.id));
+    const fb = frameMaterials[0]!.id;
+    if (!frameIds.has(next.frameMaterial)) {
+      next = { ...next, frameMaterial: fb };
+    }
+    if (!frameIds.has(next.interiorMaterial)) {
+      next = { ...next, interiorMaterial: fb };
+    }
+  }
+
+  if (doorMaterials.length > 0 && next.doors.type !== "none") {
+    const doorIds = new Set(doorMaterials.map((m) => m.id));
+    const fbDoor = doorMaterials[0]!.id;
+    const ids = next.doors.doorPanelMaterialIds;
+    if (ids.length > 0 && ids.some((id) => !doorIds.has(id))) {
+      next = {
+        ...next,
+        doors: {
+          ...next.doors,
+          doorPanelMaterialIds: ids.map((id) => (doorIds.has(id) ? id : fbDoor)),
+        },
+      };
+    }
+  }
+
+  return next;
+}
+
 /** Door panel count for the active door mode (matches WardrobeDoors3D). */
 export function wardrobeDoorPanelMaterialIdsLength(
   doorType: DoorType,
   frameWidthCm: number,
-  sectionCount: number,
+  sections: WardrobeSection[],
 ): number {
   if (doorType === "none") return 0;
-  if (doorType === "hinged") return sectionCount;
+  if (doorType === "hinged") {
+    return sections.reduce(
+      (sum, sec) => sum + hingedDoorCountForSection(sec.hingedDoorCount),
+      0,
+    );
+  }
   return Math.max(2, Math.ceil(frameWidthCm / 75));
+}
+
+/** Flat index of the first hinged door leaf in `sectionIndex` (left→right leaves in that bay). */
+export function wardrobeHingedDoorFlatBaseIndex(
+  sections: WardrobeSection[],
+  sectionIndex: number,
+): number {
+  let base = 0;
+  for (let s = 0; s < sectionIndex; s++) {
+    base += hingedDoorCountForSection(sections[s]!.hingedDoorCount);
+  }
+  return base;
+}
+
+/**
+ * Resize hinged door-panel id arrays when bay count or doors-per-bay changes.
+ * Migrates legacy storage (one id per bay) to one id per physical leaf.
+ */
+export function normalizeHingedDoorPanelMaterialIds(
+  prev: string[],
+  sections: WardrobeSection[],
+  defaultId: string,
+): string[] {
+  const targetLen = sections.reduce(
+    (sum, sec) => sum + hingedDoorCountForSection(sec.hingedDoorCount),
+    0,
+  );
+  if (targetLen === 0) return [];
+
+  const legacyPerBay =
+    prev.length === sections.length && prev.length !== targetLen;
+
+  const out: string[] = [];
+  if (legacyPerBay) {
+    for (let s = 0; s < sections.length; s++) {
+      const id = prev[s] ?? defaultId;
+      const n = hingedDoorCountForSection(sections[s]!.hingedDoorCount);
+      for (let d = 0; d < n; d++) out.push(id);
+    }
+    return out;
+  }
+
+  let p = 0;
+  for (let s = 0; s < sections.length; s++) {
+    const n = hingedDoorCountForSection(sections[s]!.hingedDoorCount);
+    for (let d = 0; d < n; d++) {
+      const id =
+        p < prev.length
+          ? prev[p]!
+          : out.length > 0
+            ? out[out.length - 1]!
+            : defaultId;
+      out.push(id);
+      p++;
+    }
+  }
+  return out;
+}
+
+export function normalizeHingedDoorPanelGrainDirections(
+  prev: GrainDirection[],
+  sections: WardrobeSection[],
+  defaultDir: GrainDirection,
+): GrainDirection[] {
+  const targetLen = sections.reduce(
+    (sum, sec) => sum + hingedDoorCountForSection(sec.hingedDoorCount),
+    0,
+  );
+  if (targetLen === 0) return [];
+
+  const legacyPerBay =
+    prev.length === sections.length && prev.length !== targetLen;
+
+  const out: GrainDirection[] = [];
+  if (legacyPerBay) {
+    for (let s = 0; s < sections.length; s++) {
+      const dir = prev[s] ?? defaultDir;
+      const n = hingedDoorCountForSection(sections[s]!.hingedDoorCount);
+      for (let d = 0; d < n; d++) out.push(dir);
+    }
+    return out;
+  }
+
+  let p = 0;
+  for (let s = 0; s < sections.length; s++) {
+    const n = hingedDoorCountForSection(sections[s]!.hingedDoorCount);
+    for (let d = 0; d < n; d++) {
+      const dir =
+        p < prev.length
+          ? prev[p]!
+          : out.length > 0
+            ? out[out.length - 1]!
+            : defaultDir;
+      out.push(dir);
+      p++;
+    }
+  }
+  return out;
 }
 
 /** In-plane gap between sliding door faces (cm) — matches `WardrobeDoors3D` `DOOR_GAP` (0.6 mm). */
@@ -500,7 +704,24 @@ export function resizeDoorPanelGrainDirections(
 /** Keep `doorPanelMaterialIds` length in sync with frame, sections, and door type. */
 export function syncDoorPanelMaterialIds(config: WardrobeConfig): WardrobeConfig {
   const { doors, frame, sections } = config;
-  const targetLen = wardrobeDoorPanelMaterialIdsLength(doors.type, frame.width, sections.length);
+  if (doors.type === "hinged") {
+    const next = normalizeHingedDoorPanelMaterialIds(
+      doors.doorPanelMaterialIds,
+      sections,
+      INTERNAL_RENDER_FALLBACK.id,
+    );
+    if (
+      next.length === doors.doorPanelMaterialIds.length &&
+      next.every((id, i) => id === doors.doorPanelMaterialIds[i])
+    ) {
+      return config;
+    }
+    return {
+      ...config,
+      doors: { ...doors, doorPanelMaterialIds: next },
+    };
+  }
+  const targetLen = wardrobeDoorPanelMaterialIdsLength(doors.type, frame.width, sections);
   const next = resizeDoorPanelMaterialIds(
     doors.doorPanelMaterialIds,
     targetLen,
@@ -520,11 +741,14 @@ export function syncDoorPanelMaterialIds(config: WardrobeConfig): WardrobeConfig
 
 /** Keep `doorPanelGrainDirections` the same length as `doorPanelMaterialIds`. */
 export function syncDoorPanelGrainDirections(config: WardrobeConfig): WardrobeConfig {
-  const { doors } = config;
+  const { doors, sections } = config;
   const targetLen = doors.doorPanelMaterialIds.length;
   const prev = doors.doorPanelGrainDirections ?? [];
   const base = config.doorGrainDirection ?? "horizontal";
-  const next = resizeDoorPanelGrainDirections(prev, targetLen, base);
+  const next =
+    doors.type === "hinged"
+      ? normalizeHingedDoorPanelGrainDirections(prev, sections, base)
+      : resizeDoorPanelGrainDirections(prev, targetLen, base);
   if (
     next.length === prev.length &&
     next.every((g, i) => g === (prev[i] ?? base))
@@ -535,6 +759,90 @@ export function syncDoorPanelGrainDirections(config: WardrobeConfig): WardrobeCo
     ...config,
     doors: { ...doors, doorPanelGrainDirections: next },
   };
+}
+
+/** Clone config with a new carcass width; bays + door arrays stay in sync with 3D / sheets. */
+export function wardrobeConfigWithFrameWidth(
+  config: WardrobeConfig,
+  frameWidthCm: number,
+): WardrobeConfig {
+  const fw = Math.round(Math.min(FRAME_MAX_WIDTH, Math.max(FRAME_MIN_WIDTH, frameWidthCm)));
+  const oldW = config.frame.width;
+  if (Math.abs(fw - oldW) < 0.05) return config;
+
+  const sections = scaleSectionsForFrameWidth(config.sections, fw, oldW);
+  const { doors } = config;
+  const doorGrainFallback = config.doorGrainDirection ?? "horizontal";
+  const targetLen = wardrobeDoorPanelMaterialIdsLength(doors.type, fw, sections);
+
+  let doorPanelMaterialIds = doors.doorPanelMaterialIds.slice();
+  if (doors.type === "hinged") {
+    doorPanelMaterialIds = normalizeHingedDoorPanelMaterialIds(
+      doorPanelMaterialIds,
+      sections,
+      INTERNAL_RENDER_FALLBACK.id,
+    );
+  }
+  doorPanelMaterialIds = resizeDoorPanelMaterialIds(
+    doorPanelMaterialIds,
+    targetLen,
+    doorPanelMaterialIds[0] ?? INTERNAL_RENDER_FALLBACK.id,
+  );
+
+  let doorPanelGrainDirections = (doors.doorPanelGrainDirections ?? []).slice();
+  if (doors.type === "hinged") {
+    doorPanelGrainDirections = normalizeHingedDoorPanelGrainDirections(
+      doorPanelGrainDirections,
+      sections,
+      doorGrainFallback,
+    );
+  }
+  doorPanelGrainDirections = resizeDoorPanelGrainDirections(
+    doorPanelGrainDirections,
+    targetLen,
+    doorGrainFallback,
+  );
+
+  return {
+    ...config,
+    frame: { ...config.frame, width: fw },
+    sections,
+    doors: {
+      ...doors,
+      doorPanelMaterialIds,
+      doorPanelGrainDirections,
+    },
+  };
+}
+
+/**
+ * Primary row geometry for one layout leg after {@link wardrobeConfigWithFrameWidth}.
+ * Must stay in sync with per-leg corners in bedroom planner footprint bounds.
+ */
+export function wardrobeEmbedRowLayoutFromConfig(config: WardrobeConfig): {
+  baseX: number;
+  addonTransforms: { id: string; xM: number; yM: number }[];
+} {
+  const CM = 0.01;
+  const frame = config.frame;
+  const W = frame.width * CM;
+  const H = frame.height * CM;
+  const seamStyle = config.seamStyle ?? "independent";
+  const seamOffsetM = seamStyle === "shared" ? -0.018 : 0;
+  const addons = config.addons ?? [];
+  let rightCount = 0;
+  let topCount = 0;
+  const addonTransforms = addons.map((addon) => {
+    if (addon.position === "right") {
+      rightCount += 1;
+      return { id: addon.id, xM: (W + seamOffsetM) * rightCount, yM: 0 };
+    }
+    topCount += 1;
+    return { id: addon.id, xM: 0, yM: (H + seamOffsetM) * topCount };
+  });
+  const totalRightM = rightCount * (W + seamOffsetM);
+  const baseX = -(W + totalRightM) / 2;
+  return { baseX, addonTransforms };
 }
 
 /** After material ids change, resize grain arrays to match. */
@@ -548,67 +856,46 @@ export function wardrobeDoorPanelMaterialId(doors: WardrobeDoorConfig): string {
 }
 
 /**
- * Drawer / door front material for a section index.
+ * Drawer / door front material for a section index (first leaf of that bay when hinged).
  * Sliding doors: section→panel mapping is ambiguous — use first panel’s finish for all bays.
  */
 export function wardrobeDoorPanelMaterialIdForSection(
   doors: WardrobeDoorConfig,
   sectionIndex: number,
+  sections?: WardrobeSection[],
 ): string {
   const ids = doors.doorPanelMaterialIds;
   if (ids.length === 0) return INTERNAL_RENDER_FALLBACK.id;
   if (doors.type === "hinged") {
+    if (sections && sectionIndex >= 0 && sectionIndex < sections.length) {
+      const flat = wardrobeHingedDoorFlatBaseIndex(sections, sectionIndex);
+      return ids[flat] ?? ids[0]!;
+    }
     return ids[sectionIndex] ?? ids[0]!;
   }
   return ids[0]!;
 }
 
-/** Grain for drawer / door fronts by section. Sliding: first panel’s grain for all bays. */
+/** Grain for drawer / door fronts by section (first hinged leaf). Sliding: first panel’s grain for all bays. */
 export function wardrobeDoorPanelGrainForSection(
   doors: WardrobeDoorConfig,
   fallback: GrainDirection,
   sectionIndex: number,
+  sections?: WardrobeSection[],
 ): GrainDirection {
   const g = doors.doorPanelGrainDirections;
   if (g.length === 0) return fallback;
   if (doors.type === "hinged") {
+    if (sections && sectionIndex >= 0 && sectionIndex < sections.length) {
+      const flat = wardrobeHingedDoorFlatBaseIndex(sections, sectionIndex);
+      return g[flat] ?? g[0] ?? fallback;
+    }
     return g[sectionIndex] ?? g[0] ?? fallback;
   }
   return g[0] ?? fallback;
 }
 
 // ── Convert admin store materials → WardrobeMaterial ─────────────────
-
-/** Exact names from the old built-in frame/door swatches — hide if still present in DB. */
-const LEGACY_BUILTIN_FINISH_NAMES = new Set(
-  [
-    "White",
-    "White Gloss",
-    "Birch",
-    "Oak",
-    "Light Oak",
-    "Natural Oak",
-    "Walnut",
-    "Black-Brown",
-    "Dark Grey",
-    "Grey-Beige",
-    "Anthracite",
-    "Mirror",
-    "Frosted Glass",
-    "Smoked Glass",
-    "Pine",
-    "White Pine",
-    "Yellow Pine",
-    "Knotty Pine",
-    "Southern Pine",
-    "Light Pine",
-    "Honey Pine",
-  ].map((s) => s.toLowerCase()),
-);
-
-function isLegacyBuiltinFinishName(name: string): boolean {
-  return LEGACY_BUILTIN_FINISH_NAMES.has(name.trim().toLowerCase());
-}
 
 function toWardrobeSwatch(
   m: Omit<WardrobeMaterial, "surfaceType" | "brandKey"> & {
@@ -643,7 +930,6 @@ export function materialsFromStore(
   manufacturerName?: string,
 ): WardrobeMaterial[] {
   return plannerMaterialsFromStore(storeMaterials, manufacturerName, { forWardrobe: true })
-    .filter((m) => !isLegacyBuiltinFinishName(m.name))
     .map(toWardrobeSwatch);
 }
 
@@ -653,7 +939,6 @@ export function doorFrontMaterialsFromStore(
   manufacturerName?: string,
 ): WardrobeMaterial[] {
   return plannerDoorFrontMaterialsFromStore(storeMaterials, manufacturerName)
-    .filter((m) => !isLegacyBuiltinFinishName(m.name))
     .map(toWardrobeSwatch);
 }
 
@@ -1094,8 +1379,22 @@ export function calculatePrice(
   availableMaterials?: WardrobeMaterial[],
   slidingMechanisms?: WardrobeMaterial[],
   handleMaterials?: WardrobeMaterial[],
+  opts?: { layoutLegCount?: number; layoutLegWidthsCm?: number[] },
 ): PriceBreakdown {
   const { frame, sections, doors, frameMaterial, interiorMaterial } = config;
+
+  let mult = Math.max(1, Math.floor(opts?.layoutLegCount ?? 1));
+  const widths = opts?.layoutLegWidthsCm;
+  if (widths && widths.length > 0) {
+    const refArea = frameSurfaceArea(frame.width, frame.height, frame.depth);
+    if (refArea > 1e-9) {
+      mult =
+        widths.reduce(
+          (s, w) => s + frameSurfaceArea(w, frame.height, frame.depth),
+          0,
+        ) / refArea;
+    }
+  }
   const base = clampWardrobeBase(config.base ?? DEFAULT_WARDROBE_BASE);
 
   let baseOption = 0;
@@ -1164,14 +1463,14 @@ export function calculatePrice(
     materialSurcharge;
 
   return {
-    frame: frameBase,
-    sections: sectionSurcharge,
-    components: componentTotal,
-    doors: Math.round(doorPrice),
-    handles: Math.round(handlePrice),
-    slidingMechanism: Math.round(mechanismPrice),
-    baseOption: Math.round(baseOption),
-    materialSurcharge,
-    total: Math.round(total),
+    frame: Math.round(frameBase * mult),
+    sections: Math.round(sectionSurcharge * mult),
+    components: Math.round(componentTotal * mult),
+    doors: Math.round(doorPrice * mult),
+    handles: Math.round(handlePrice * mult),
+    slidingMechanism: Math.round(mechanismPrice * mult),
+    baseOption: Math.round(baseOption * mult),
+    materialSurcharge: Math.round(materialSurcharge * mult),
+    total: Math.round(total * mult),
   };
 }

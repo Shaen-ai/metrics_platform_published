@@ -16,9 +16,6 @@ import {
   shelfBoardWidthM,
   shelfBoardDepthM,
   shelfDepthOffsetM,
-  clampWardrobeBase,
-  DEFAULT_WARDROBE_BASE,
-  wardrobePlinthFrontDropCm,
   type WardrobeMaterial,
 } from "./data";
 import { useHandleTexture } from "../useHandleTexture";
@@ -32,10 +29,8 @@ import {
   useSheetPanelInfoForMaterial,
 } from "../sheet/useWardrobePanelPlacements";
 import { boxMaterialsForPanel, planarMaterialForPanel } from "../sheet/renderHelpers";
-import {
-  drawerFrontLayoutM,
-  type DrawerFrontVisibleHeightOptions,
-} from "../sheet/wardrobePanels";
+import { drawerFrontLayoutM } from "../sheet/wardrobePanels";
+import { useWardrobeRenderedConfig } from "./wardrobeEffectiveConfig";
 import type { WardrobeComponent, WardrobeSection, GrainDirection } from "./types";
 
 const CM = 0.01;
@@ -252,32 +247,12 @@ interface ComponentWithMaterialProps {
 function ComponentWithMaterial(props: ComponentWithMaterialProps) {
   const doorsType = useWardrobeStore((s) => s.config.doors.type);
   const sectionsAll = useWardrobeStore((s) => s.config.sections);
-  const wardrobeBase = useWardrobeStore((s) => s.config.base);
-  const drawerFrontOpts: DrawerFrontVisibleHeightOptions = useMemo(() => {
-    let slidingMax = 0;
-    if (doorsType === "sliding") {
-      for (const sec of sectionsAll) {
-        for (const c of sec.components) {
-          if (c.type === "drawer" || c.type === "empty-section") {
-            slidingMax = Math.max(slidingMax, c.yPosition + c.height);
-          }
-        }
-      }
-    }
-    return {
-      frameHeightCm: props.frameHeight,
-      doorsType,
-      slidingMaxFrontExtentCm: slidingMax,
-      plinthFrontDropCm: wardrobePlinthFrontDropCm(clampWardrobeBase(wardrobeBase ?? DEFAULT_WARDROBE_BASE)),
-    };
-  }, [props.frameHeight, doorsType, sectionsAll, wardrobeBase]);
 
   const drawerHandleYOffset = useMemo(() => {
     if (props.comp.type !== "drawer") return 0;
     const refIdx = sectionsAll.findIndex((sec) => sec.components.some((c) => c.type === "drawer"));
     if (refIdx < 0 || refIdx === props.sectionIndex) return 0;
 
-    const opts = drawerFrontOpts;
     const refSec = sectionsAll[refIdx]!;
     const refDrawers = refSec.components
       .map((c, i) => ({ c, i }))
@@ -294,12 +269,10 @@ function ComponentWithMaterial(props: ComponentWithMaterialProps) {
     const { bottomFrontM: rbf, frontHM: rh } = drawerFrontLayoutM(
       refSec.components,
       refEntry.i,
-      opts,
     );
     const { bottomFrontM: mbf, frontHM: mh } = drawerFrontLayoutM(
       props.sectionComponents,
       props.componentIndex,
-      opts,
     );
     return rbf + rh / 2 - (mbf + mh / 2);
   }, [
@@ -308,7 +281,6 @@ function ComponentWithMaterial(props: ComponentWithMaterialProps) {
     props.componentIndex,
     props.sectionComponents,
     sectionsAll,
-    drawerFrontOpts,
   ]);
 
   // Match `wardrobePanels.ts` effectiveFrontGrain: hinged + vertical section grain
@@ -350,7 +322,6 @@ function ComponentWithMaterial(props: ComponentWithMaterialProps) {
     const { frontHM } = drawerFrontLayoutM(
       props.sectionComponents,
       props.componentIndex,
-      drawerFrontOpts,
     );
     const frontH = frontHM;
     // Same repeat scale as hinged doors (WardrobeDoors3D). Old drawer-only
@@ -377,7 +348,6 @@ function ComponentWithMaterial(props: ComponentWithMaterialProps) {
     props.componentIndex,
     props.sectionComponents,
     drawerPanelInfo,
-    drawerFrontOpts,
   ]);
 
   return (
@@ -399,7 +369,6 @@ function ComponentWithMaterial(props: ComponentWithMaterialProps) {
       interiorGrain={props.interiorGrain}
       frameWidth={props.frameWidth}
       frameHeight={props.frameHeight}
-      drawerFrontOpts={drawerFrontOpts}
       handleColor={props.handleColor}
       handleRoughness={props.handleRoughness}
       handleMetalness={props.handleMetalness}
@@ -427,7 +396,6 @@ interface ComponentMeshProps {
   interiorGrain: GrainDirection;
   frameWidth: number;
   frameHeight: number;
-  drawerFrontOpts: DrawerFrontVisibleHeightOptions;
   handleColor: string;
   handleRoughness: number;
   handleMetalness: number;
@@ -453,7 +421,6 @@ function ComponentMesh({
   interiorGrain,
   frameWidth,
   frameHeight,
-  drawerFrontOpts,
   handleColor,
   handleRoughness,
   handleMetalness,
@@ -525,7 +492,6 @@ function ComponentMesh({
       const { bottomFrontM: bottomFrontY, frontHM } = drawerFrontLayoutM(
         sectionComponents,
         componentIndex,
-        drawerFrontOpts,
       );
       const frontH = frontHM;
       const handleY = bottomFrontY + frontH / 2 + drawerHandleYOffset;
@@ -897,8 +863,7 @@ function noopSelect(_id: string | null) {}
 
 export default function WardrobeInterior3D() {
   const embed = useContext(WardrobeRoomContext);
-  const storeConfig = useWardrobeStore((s) => s.config);
-  const config = embed?.config ?? storeConfig;
+  const config = useWardrobeRenderedConfig();
   const frame = config.frame;
   const sections = config.sections;
   const selectedFromStore = useWardrobeStore((s) => s.ui.selectedComponentId);
@@ -965,9 +930,9 @@ export default function WardrobeInterior3D() {
           onClickComponent={selectComponent}
           highlightMaterial={highlightMaterial}
           interiorMatId={interiorMatId}
-          doorMatId={wardrobeDoorPanelMaterialIdForSection(doors, i)}
+          doorMatId={wardrobeDoorPanelMaterialIdForSection(doors, i, sections)}
           globalInteriorGrain={interiorGrainDirection}
-          doorGrain={wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, i)}
+          doorGrain={wardrobeDoorPanelGrainForSection(doors, doorGrainFallback, i, sections)}
           handleColor={hw.color}
           handleRoughness={hw.roughness}
           handleMetalness={hw.metalness}

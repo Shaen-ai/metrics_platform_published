@@ -14,30 +14,10 @@ import {
   generateSubtleTexture,
 } from "../wardrobe/proceduralTextures";
 import { applyGrainRotation, type GrainDirection } from "../textureRepeat";
-import { publicApiUrl } from "@/lib/publicEnv";
+import { proxyTextureUrl } from "../shared/buildPhysicalMaterialFromSwatch";
 
 const PLACEHOLDER_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
-
-
-function proxyUrl(url: string): string {
-  if (url.startsWith("data:") || url.startsWith("blob:")) {
-    return url;
-  }
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return url;
-    }
-    const apiOrigin = new URL(publicApiUrl).origin;
-    if (parsed.origin === apiOrigin || parsed.origin === window.location.origin) {
-      return url;
-    }
-    return `${publicApiUrl}/image-proxy?url=${encodeURIComponent(url)}`;
-  } catch {
-    return url;
-  }
-}
 
 const WOOD_PARAMS: Record<
   string,
@@ -149,7 +129,7 @@ function buildKitchenMaterial(
 export function useKitchenMaterial(matId: string, grainDirection: GrainDirection = "horizontal") {
   const availableMaterials = useKitchenStore((s) => s.availableMaterials);
   const mat = getMaterial(matId, availableMaterials);
-  const textureUrl = mat.imageUrl ? proxyUrl(mat.imageUrl) : PLACEHOLDER_URL;
+  const textureUrl = mat.imageUrl ? proxyTextureUrl(mat.imageUrl) : PLACEHOLDER_URL;
   const texture = useTexture(textureUrl);
   const externalTexture = mat.imageUrl ? texture : null;
 
@@ -164,7 +144,7 @@ export function useKitchenMaterial(matId: string, grainDirection: GrainDirection
 export function useKitchenDoorMaterial(matId: string, grainDirection: GrainDirection = "horizontal") {
   const availableDoorMaterials = useKitchenStore((s) => s.availableDoorMaterials);
   const mat = getMaterial(matId, availableDoorMaterials);
-  const textureUrl = mat.imageUrl ? proxyUrl(mat.imageUrl) : PLACEHOLDER_URL;
+  const textureUrl = mat.imageUrl ? proxyTextureUrl(mat.imageUrl) : PLACEHOLDER_URL;
   const texture = useTexture(textureUrl);
   const externalTexture = mat.imageUrl ? texture : null;
 
@@ -182,7 +162,7 @@ export function useCountertopResolvedMaterial(countertop: CountertopConfig) {
     () => resolveCountertopKitchenMaterial(countertop, adminWorktops),
     [countertop, adminWorktops],
   );
-  const textureUrl = mat.imageUrl ? proxyUrl(mat.imageUrl) : PLACEHOLDER_URL;
+  const textureUrl = mat.imageUrl ? proxyTextureUrl(mat.imageUrl) : PLACEHOLDER_URL;
   const texture = useTexture(textureUrl);
   const externalTexture = mat.imageUrl ? texture : null;
 

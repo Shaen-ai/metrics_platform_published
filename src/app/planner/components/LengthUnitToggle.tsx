@@ -3,15 +3,20 @@
 import { usePlannerStore } from "../store/usePlannerStore";
 import type { LengthUnit } from "../types";
 
-export default function LengthUnitToggle({ className = "" }: { className?: string }) {
-  const lengthUnit = usePlannerStore((s) => s.ui.lengthUnit);
-  const setLengthUnit = usePlannerStore((s) => s.setLengthUnit);
-
+export function LengthUnitToggleButtons({
+  lengthUnit,
+  onChange,
+  className = "",
+}: {
+  lengthUnit: LengthUnit;
+  onChange: (unit: LengthUnit) => void;
+  className?: string;
+}) {
   const btn = (unit: LengthUnit, label: string, extra = "") => (
     <button
       key={unit}
       type="button"
-      onClick={() => setLengthUnit(unit)}
+      onClick={() => onChange(unit)}
       className={`px-3 py-1.5 text-sm font-medium transition-colors ${extra} ${
         lengthUnit === unit
           ? "bg-[#E8772E] text-white"
@@ -31,5 +36,14 @@ export default function LengthUnitToggle({ className = "" }: { className?: strin
       {btn("cm", "cm")}
       {btn("in", "in", "border-l border-[#F0E6D8]")}
     </div>
+  );
+}
+
+export default function LengthUnitToggle({ className = "" }: { className?: string }) {
+  const lengthUnit = usePlannerStore((s) => s.ui.lengthUnit);
+  const setLengthUnit = usePlannerStore((s) => s.setLengthUnit);
+
+  return (
+    <LengthUnitToggleButtons lengthUnit={lengthUnit} onChange={setLengthUnit} className={className} />
   );
 }

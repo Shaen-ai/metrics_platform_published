@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { v4 as uuidv4 } from "uuid";
 import type {
+  KitchenAddModuleOpts,
   KitchenState,
   KitchenConfig,
   KitchenUIState,
@@ -13,8 +14,11 @@ import type {
   ViewMode,
   KitchenStep,
   DesignRefKind,
+  KitchenModule,
+  KitchenModuleType,
 } from "./types";
-import type { FloorStyle } from "../types";
+import { normalizeFloorStyle, type FloorStyle } from "../types";
+import { normalizePlannerFloorSurfaceFields, normalizePlannerWallCeilingSurfaceFields } from "../roomFloorMaterial";
 import type { Module } from "@/lib/types";
 import {
   NEUTRAL_KITCHEN_MATERIAL,
@@ -27,12 +31,62 @@ import {
   defaultLeftWallConfig,
   DESIGN_REF_PRESETS,
   WALL_MOUNT_Y,
-  inferKitchenBaseTypeFromName,
-  inferKitchenWallTypeFromName,
+  resolveKitchenModuleTypeFromPlannerModule,
+  kitchenModuleSupportsDoorLeaves,
   clampConfigMaterialsToAvailable,
   resolveAddModuleWidth,
 } from "./data";
-import type { KitchenModule } from "./types";
+
+function normalizeKitchenRoomSettings(room: RoomSettings): RoomSettings {
+  const surf = normalizePlannerFloorSurfaceFields(room);
+  const interior = normalizePlannerWallCeilingSurfaceFields(room);
+  return {
+    ...room,
+    ...surf,
+    ...interior,
+    floorStyle: normalizeFloorStyle(room.floorStyle),
+  };
+}
+
+function extrasFromKitchenAddOpts(opts?: KitchenAddModuleOpts): Partial<KitchenModule> {
+  if (!opts?.doorPreset) return {};
+  return { doorPreset: opts.doorPreset };
+}
+
+/** Default body/door finishes from catalog row (Planner custom modules use cabinetMaterialId; API may use defaults). */
+export function plannerModuleMaterialOverrides(m: Module): Partial<KitchenModule> {
+  const cabinet = m.cabinetMaterialId ?? m.defaultCabinetMaterialId;
+  const door = m.doorMaterialId ?? m.defaultDoorMaterialId;
+  const patch: Partial<KitchenModule> = {};
+  if (cabinet?.trim()) patch.cabinetMaterialId = cabinet.trim();
+  if (door?.trim()) patch.doorMaterialId = door.trim();
+  return patch;
+}
+
+function plannerModuleDoorFields(
+  m: Module,
+  resolvedType: KitchenModuleType,
+): Partial<KitchenModule> {
+  const patch: Partial<KitchenModule> = {};
+  if (
+    resolvedType !== "base-open" &&
+    resolvedType !== "wall-open" &&
+    m.kitchenDoorPreset
+  ) {
+    patch.doorPreset = m.kitchenDoorPreset;
+  }
+  if (
+    kitchenModuleSupportsDoorLeaves(resolvedType) &&
+    m.kitchenDoorLeafCount != null &&
+    Number.isFinite(m.kitchenDoorLeafCount)
+  ) {
+    patch.doorLeafCount = Math.min(
+      6,
+      Math.max(1, Math.round(m.kitchenDoorLeafCount)),
+    );
+  }
+  return patch;
+}
 
 function clampDim(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
@@ -254,17 +308,17 @@ function mergePersistedRoom(saved?: RoomSettings): RoomSettings {
   };
   if (merged.floorOutline && merged.floorOutline.length >= 3) {
     const bb = bboxSizeFromOutline(merged.floorOutline);
-    return {
+    return normalizeKitchenRoomSettings({
       ...merged,
       footprintWidthM: bb.width,
       footprintDepthM: bb.depth,
-    };
+    });
   }
-  return {
+  return normalizeKitchenRoomSettings({
     ...merged,
     footprintWidthM: saved?.footprintWidthM ?? defaultRoom.footprintWidthM,
     footprintDepthM: saved?.footprintDepthM ?? defaultRoom.footprintDepthM,
-  };
+  });
 }
 
 const mergedInitialRoom: RoomSettings = mergePersistedRoom(persisted?.room);
@@ -350,10 +404,15 @@ export const useKitchenStore = create<KitchenState>()(
 
       // ── Base modules ──
 
-      addBaseModule: (type: BaseModuleType, opts?: { width?: number }) =>
+      addBaseModule: (type: BaseModuleType, opts?: KitchenAddModuleOpts) =>
         set((s) => {
           const width = resolveAddModuleWidth("base", type, opts?.width);
-          const kitchenModule = { id: uuidv4(), type, width };
+          const kitchenModule: KitchenModule = {
+            id: uuidv4(),
+            type,
+            width,
+            ...extrasFromKitchenAddOpts(opts),
+          };
           const config = { ...s.config, baseModules: [...s.config.baseModules, kitchenModule] };
           persistSliceValues(s, { config });
           pushHistory(set, get, config);
@@ -374,17 +433,23 @@ export const useKitchenStore = create<KitchenState>()(
             adminCatalogModuleId: m.id,
             adminCatalogModelUrl: catalogReadyUrl,
           };
+          const resolvedType = resolveKitchenModuleTypeFromPlannerModule({
+            placementType: "floor",
+            kitchenModuleType: m.kitchenModuleType,
+            name: m.name,
+          });
           if (m.placementType === "floor") {
-            const type = inferKitchenBaseTypeFromName(m.name);
             const id = uuidv4();
             const tmp: KitchenModule = {
               id,
-              type,
+              type: resolvedType,
               width: w,
               heightCm: h,
               depthCm: d,
               fromAdminCatalog: true,
               ...catalogFields,
+              ...plannerModuleMaterialOverrides(m),
+              ...plannerModuleDoorFields(m, resolvedType),
             };
             const lim = limitsForKitchenModuleEdit(tmp);
             const km = {
@@ -408,16 +473,22 @@ export const useKitchenStore = create<KitchenState>()(
               },
             };
           }
-          const type = inferKitchenWallTypeFromName(m.name);
+          const resolvedWallType = resolveKitchenModuleTypeFromPlannerModule({
+            placementType: "wall",
+            kitchenModuleType: m.kitchenModuleType,
+            name: m.name,
+          });
           const id = uuidv4();
           const kmDraft: KitchenModule = {
             id,
-            type,
+            type: resolvedWallType,
             width: w,
             heightCm: h,
             depthCm: d,
             fromAdminCatalog: true,
             ...catalogFields,
+            ...plannerModuleMaterialOverrides(m),
+            ...plannerModuleDoorFields(m, resolvedWallType),
           };
           const wlim = limitsForKitchenModuleEdit(kmDraft);
           const kmBase: KitchenModule = {
@@ -528,10 +599,15 @@ export const useKitchenStore = create<KitchenState>()(
 
       // ── Wall modules ──
 
-      addWallModule: (type: WallModuleType, opts?: { width?: number }) =>
+      addWallModule: (type: WallModuleType, opts?: KitchenAddModuleOpts) =>
         set((s) => {
           const width = resolveAddModuleWidth("wall", type, opts?.width);
-          const mod: KitchenModule = { id: uuidv4(), type, width };
+          const mod: KitchenModule = {
+            id: uuidv4(),
+            type,
+            width,
+            ...extrasFromKitchenAddOpts(opts),
+          };
           const pos = findFreeWallPosition(mod, s.config.wallModules, s.config.baseModules, s.room);
           const kitchenModule: KitchenModule = { ...mod, xCm: pos.xCm, yCm: pos.yCm };
           const config = { ...s.config, wallModules: [...s.config.wallModules, kitchenModule] };
@@ -639,10 +715,15 @@ export const useKitchenStore = create<KitchenState>()(
           return { config };
         }),
 
-      addIslandBaseModule: (type: BaseModuleType, opts?: { width?: number }) =>
+      addIslandBaseModule: (type: BaseModuleType, opts?: KitchenAddModuleOpts) =>
         set((s) => {
           const width = resolveAddModuleWidth("base", type, opts?.width);
-          const mod = { id: uuidv4(), type, width };
+          const mod: KitchenModule = {
+            id: uuidv4(),
+            type,
+            width,
+            ...extrasFromKitchenAddOpts(opts),
+          };
           const island = { ...s.config.island, baseModules: [...s.config.island.baseModules, mod] };
           const config = { ...s.config, island };
           persistSliceValues(s, { config });
@@ -733,10 +814,15 @@ export const useKitchenStore = create<KitchenState>()(
           return { config };
         }),
 
-      addIslandWallModule: (type: WallModuleType, opts?: { width?: number }) =>
+      addIslandWallModule: (type: WallModuleType, opts?: KitchenAddModuleOpts) =>
         set((s) => {
           const width = resolveAddModuleWidth("wall", type, opts?.width);
-          const mod = { id: uuidv4(), type, width };
+          const mod: KitchenModule = {
+            id: uuidv4(),
+            type,
+            width,
+            ...extrasFromKitchenAddOpts(opts),
+          };
           const island = { ...s.config.island, wallModules: [...s.config.island.wallModules, mod] };
           const config = { ...s.config, island };
           persistSliceValues(s, { config });
@@ -902,10 +988,15 @@ export const useKitchenStore = create<KitchenState>()(
           return { config };
         }),
 
-      addLeftBaseModule: (type: BaseModuleType, opts?: { width?: number }) =>
+      addLeftBaseModule: (type: BaseModuleType, opts?: KitchenAddModuleOpts) =>
         set((s) => {
           const width = resolveAddModuleWidth("base", type, opts?.width);
-          const mod = { id: uuidv4(), type, width };
+          const mod: KitchenModule = {
+            id: uuidv4(),
+            type,
+            width,
+            ...extrasFromKitchenAddOpts(opts),
+          };
           const leftWall = { ...s.config.leftWall, baseModules: [...s.config.leftWall.baseModules, mod] };
           const config = { ...s.config, leftWall };
           persistSliceValues(s, { config });
@@ -996,10 +1087,15 @@ export const useKitchenStore = create<KitchenState>()(
           return { config };
         }),
 
-      addLeftWallModule: (type: WallModuleType, opts?: { width?: number }) =>
+      addLeftWallModule: (type: WallModuleType, opts?: KitchenAddModuleOpts) =>
         set((s) => {
           const width = resolveAddModuleWidth("wall", type, opts?.width);
-          const mod = { id: uuidv4(), type, width };
+          const mod: KitchenModule = {
+            id: uuidv4(),
+            type,
+            width,
+            ...extrasFromKitchenAddOpts(opts),
+          };
           const leftWall = { ...s.config.leftWall, wallModules: [...s.config.leftWall.wallModules, mod] };
           const config = { ...s.config, leftWall };
           persistSliceValues(s, { config });
@@ -1253,7 +1349,7 @@ export const useKitchenStore = create<KitchenState>()(
             fw = bb.width;
             fd = bb.depth;
           }
-          const room: RoomSettings = {
+          const room = normalizeKitchenRoomSettings({
             ...s.room,
             footprintWidthM: fw,
             footprintDepthM: fd,
@@ -1262,7 +1358,7 @@ export const useKitchenStore = create<KitchenState>()(
             floorOpenEdgeIndices: payload.openEdgeIndices
               ? [...payload.openEdgeIndices]
               : undefined,
-          };
+          });
           persistSliceValues(s, { room, kitchenDesignSetupComplete: true });
           return { room, kitchenDesignSetupComplete: true };
         }),
@@ -1276,7 +1372,21 @@ export const useKitchenStore = create<KitchenState>()(
 
       setFloorStyle: (style: FloorStyle) =>
         set((s) => {
-          const room = { ...s.room, floorStyle: style };
+          const room = normalizeKitchenRoomSettings({ ...s.room, floorStyle: style });
+          persistSliceValues(s, { room });
+          return { room };
+        }),
+
+      setPlannerFloorSurface: (patch) =>
+        set((s) => {
+          const room = normalizeKitchenRoomSettings({ ...s.room, ...patch });
+          persistSliceValues(s, { room });
+          return { room };
+        }),
+
+      setPlannerWallCeilingSurface: (patch) =>
+        set((s) => {
+          const room = normalizeKitchenRoomSettings({ ...s.room, ...patch });
           persistSliceValues(s, { room });
           return { room };
         }),

@@ -165,11 +165,64 @@ export interface BeamBoxWorld {
   args: [number, number, number];
 }
 
-/** Axis-aligned floor (XZ) footprints of vertical wall columns for furniture collision. */
+type BeamFloorObstacle = {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  preferredPushAxis?: "x" | "z";
+};
+
+function preferredPushAxisForWallBeam(
+  wall: NonNullable<RoomBeam["wall"]>,
+  run: NonNullable<RoomBeam["wallRun"]>,
+): "x" | "z" {
+  const onFrontBack = wall === "back" || wall === "front";
+  if (run === "vertical") {
+    // Columns are best cleared by sliding along the wall.
+    return onFrontBack ? "x" : "z";
+  }
+  // Horizontal wall beams are best cleared by moving away from the wall face.
+  return onFrontBack ? "z" : "x";
+}
+
+function intervalsOverlap(a0: number, a1: number, b0: number, b1: number): boolean {
+  return Math.min(a1, b1) - Math.max(a0, b0) > 0;
+}
+
+/** Axis-aligned floor (XZ) footprints of wall beams that overlap a furniture item's height. */
+export function getWallBeamFloorObstacles(
+  room: Room,
+  itemBottomY = 0,
+  itemTopY = Infinity,
+): BeamFloorObstacle[] {
+  const out: BeamFloorObstacle[] = [];
+  for (const b of room.beams ?? []) {
+    if (b.surface !== "wall" || !b.wall) continue;
+    const box = getWallBeamBox(b, room);
+    if (!box) continue;
+    const [, py] = box.position;
+    const [, sy] = box.args;
+    if (!intervalsOverlap(itemBottomY, itemTopY, py - sy / 2, py + sy / 2)) continue;
+
+    const [px, , pz] = box.position;
+    const [sx, , sz] = box.args;
+    out.push({
+      minX: px - sx / 2,
+      maxX: px + sx / 2,
+      minZ: pz - sz / 2,
+      maxZ: pz + sz / 2,
+      preferredPushAxis: preferredPushAxisForWallBeam(b.wall, b.wallRun ?? "horizontal"),
+    });
+  }
+  return out;
+}
+
+/** Axis-aligned floor (XZ) footprints of vertical wall columns for legacy callers. */
 export function getVerticalWallBeamFloorObstacles(
   room: Room
-): Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> {
-  const out: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
+): BeamFloorObstacle[] {
+  const out: Array<{ minX: number; maxX: number; minZ: number; maxZ: number; preferredPushAxis?: "x" | "z" }> = [];
   for (const b of room.beams ?? []) {
     if (b.surface !== "wall" || (b.wallRun ?? "horizontal") !== "vertical" || !b.wall) continue;
     const box = getWallBeamBox(b, room);
@@ -181,6 +234,7 @@ export function getVerticalWallBeamFloorObstacles(
       maxX: px + sx / 2,
       minZ: pz - sz / 2,
       maxZ: pz + sz / 2,
+      preferredPushAxis: b.wall === "back" || b.wall === "front" ? "x" : "z",
     });
   }
   return out;

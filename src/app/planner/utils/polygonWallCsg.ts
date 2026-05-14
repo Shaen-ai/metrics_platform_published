@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
+import { applyPlanarSurfaceUvs } from "./wallPrism";
 
 const csgEvaluator = new Evaluator();
 csgEvaluator.useGroups = false;
@@ -129,7 +130,7 @@ export function createPolygonWallSegmentWithHoles(
   wallBrush.updateMatrixWorld();
 
   if (cuts.length === 0) {
-    return wallBrush.geometry;
+    return applyPlanarSurfaceUvs(wallBrush.geometry);
   }
 
   for (const cut of cuts) {
@@ -145,5 +146,5 @@ export function createPolygonWallSegmentWithHoles(
   }
 
   const finalGeom = wallBrush.geometry;
-  return finalGeom;
+  return applyPlanarSurfaceUvs(finalGeom);
 }

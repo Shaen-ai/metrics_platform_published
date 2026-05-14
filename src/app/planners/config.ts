@@ -15,9 +15,27 @@ export interface PlannerConfig {
   customLayout?: boolean;
   /** When false, omitted from /planners hub; direct URLs still work. Default true. */
   hubVisible?: boolean;
+  /** Merge catalog rows from these sub-mode slugs (defaults to a single `{id}` slug). */
+  catalogSubModes?: string[];
+  /** Room planner only: nest items under headings by merchant mode when the catalog spans many pillars. */
+  groupCatalogByMode?: boolean;
 }
 
 export const plannerConfigs: PlannerConfig[] = [
+  {
+    id: "interior-design",
+    name: "AI Interior Designer",
+    shortName: "AI Design",
+    description:
+      "Upload a room photo. AI restyles the interior in place while keeping layout and openings. Describe colors, style, materials, or any specific requirements, then refine in chat and send to the 3D planner.",
+    icon: "Sparkles",
+    color: "text-fuchsia-500",
+    bgColor: "bg-fuchsia-500/10",
+    categories: [],
+    defaultRoom: { width: 5, depth: 4, height: 2.8, floorStyle: "laminate-natural-oak" },
+    tags: ["ai", "interior", "design", "photo", "redesign", "style"],
+    customLayout: true,
+  },
   {
     id: "ai-room",
     name: "AI Room Planner",
@@ -43,6 +61,7 @@ export const plannerConfigs: PlannerConfig[] = [
     categories: [],
     defaultRoom: { width: 6, depth: 5, height: 2.8, floorStyle: "laminate-natural-oak" },
     tags: ["all", "general", "full catalog"],
+    groupCatalogByMode: true,
   },
   {
     id: "kitchen",
@@ -61,6 +80,7 @@ export const plannerConfigs: PlannerConfig[] = [
       floorStyle: "laminate-light-oak",
     },
     tags: ["cabinets", "appliances", "countertops", "METOD", "ENHET", "sink", "refrigerator", "dishwasher", "hood"],
+    catalogSubModes: ["kitchen", "major-appliances"],
   },
   {
     id: "kitchen-design",
@@ -154,8 +174,6 @@ export const plannerConfigs: PlannerConfig[] = [
     defaultRoom: { width: 3, depth: 3, height: 2.8 },
     tags: ["wardrobe", "garderobe", "closet", "PAX", "shelves", "drawers"],
     customLayout: true,
-    /** Reach via Bedroom planner (“Your wardrobes”) or deep links; not a separate hub tile */
-    hubVisible: false,
   },
   {
     id: "living-room",
@@ -228,6 +246,24 @@ export const plannerConfigs: PlannerConfig[] = [
       floorStyle: "laminate-light-oak",
     },
     tags: ["bunk bed", "toy storage", "desk", "SMÅSTAD"],
+  },
+  {
+    id: "outdoor",
+    name: "Outdoor Planner",
+    shortName: "Outdoor",
+    description:
+      "Lay out your patio or deck with outdoor furniture. Configure cushions and upholstery on each piece in 3D.",
+    icon: "TreePine",
+    color: "text-green-600",
+    bgColor: "bg-green-500/10",
+    categories: ["Seating", "Tables", "Storage", "Decor"],
+    defaultRoom: {
+      width: 8,
+      depth: 6,
+      height: 2.8,
+      floorStyle: "laminate-weathered-oak",
+    },
+    tags: ["patio", "garden", "bench", "deck", "outdoor"],
   },
   {
     id: "hallway",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useMemo, useState, type ComponentRef } from "react";
+import { useRef, useEffect, useMemo, useState, type ComponentRef, type RefObject } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
 import * as THREE from "three";
@@ -12,33 +12,79 @@ import { useWardrobeSheetLayout } from "../sheet/useWardrobeSheetLayout";
 import SheetViewerModal from "../sheet/SheetViewerModal";
 import { sortPlacementsWardrobeFrontOrder } from "../sheet/wardrobeSheetPlacementSort";
 import { wardrobePanelFrontOrderKey } from "../sheet/wardrobePanels";
-import { createPlannerFloorMaterial } from "../laminateFloor";
+import { buildPlannerFloorMaterialFromRoom, buildPlannerWallSurfaceMaterial, buildPlannerCeilingSurfaceMaterial } from "../roomFloorMaterial";
 import WardrobeFrame3D from "./WardrobeFrame3D";
 import WardrobeBase3D from "./WardrobeBase3D";
 import WardrobeInterior3D from "./WardrobeInterior3D";
 import WardrobeDoors3D from "./WardrobeDoors3D";
-import { wardrobeBaseLiftCm, clampWardrobeBase } from "./data";
+import { wardrobeBaseLiftCm, clampWardrobeBase, wardrobeConfigWithFrameWidth, wardrobeEmbedRowLayoutFromConfig } from "./data";
 import SectionHighlights from "./SectionHighlights";
 import DimensionAnnotations from "./DimensionAnnotations";
 import type { ViewMode } from "./types";
+import type { FloorOutlinePoint } from "../types";
 import { ROOM_WALL_THICKNESS_M as WALL_T } from "../constants/roomGeometry";
+import { edgeFrame } from "../utils/polygonWallCsg";
+import {
+  WARDROBE_LEG_GROUP_Z_BUMP_M,
+  DEFAULT_PREVIEW_ROOM_HEIGHT_M,
+  wardrobeBridgeLiftMeters,
+  wardrobeCompositionWidthMeters,
+  wardrobeLayoutInteractiveLegIndex,
+  wardrobeLayoutGeometry,
+  wardrobeLayoutLegItems,
+  wardrobeRoomHalfExtents,
+} from "./wardrobeSpaceLayout";
+import { WardrobeLegLayoutProvider } from "./WardrobeLegLayoutContext";
 
 const CM = 0.01;
 
-// Stable reference so Zustand selectors returning the fallback don't trip
-// React's "getSnapshot should be cached" infinite-loop guard.
-const EMPTY_ADDONS: import("./types").WardrobeAddon[] = [];
-
-function hexToRgb(hex: string): [number, number, number] {
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
+function createOutlineShapeXZ(outline: FloorOutlinePoint[]): THREE.Shape {
+  const shape = new THREE.Shape();
+  const p0 = outline[0]!;
+  shape.moveTo(p0.x, p0.z);
+  for (let i = 1; i < outline.length; i++) {
+    const p = outline[i]!;
+    shape.lineTo(p.x, p.z);
+  }
+  shape.closePath();
+  return shape;
 }
 
-function clamp255(v: number) {
-  return Math.max(0, Math.min(255, Math.round(v)));
+/** CCW footprint: positive cross ⇒ convex vertex (outer corner). */
+function isConvexVertexCCW(
+  prev: FloorOutlinePoint,
+  cur: FloorOutlinePoint,
+  next: FloorOutlinePoint,
+): boolean {
+  const ax = cur.x - prev.x;
+  const az = cur.z - prev.z;
+  const bx = next.x - cur.x;
+  const bz = next.z - cur.z;
+  return ax * bz - az * bx > 1e-8;
+}
+
+function polygonWallHiddenDigest(
+  outlineQ: FloorOutlinePoint[],
+  openEdgeIndices: number[],
+  camera: THREE.Camera,
+): string {
+  const open = new Set(openEdgeIndices);
+  const n = outlineQ.length;
+  const hidden: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (open.has(i)) continue;
+    const A = outlineQ[i]!;
+    const B = outlineQ[(i + 1) % n]!;
+    const { ox, oz, L } = edgeFrame(A.x, A.z, B.x, B.z);
+    if (L < 1e-6) continue;
+    const mx = (A.x + B.x) / 2;
+    const mz = (A.z + B.z) / 2;
+    const vx = camera.position.x - mx;
+    const vz = camera.position.z - mz;
+    if (vx * ox + vz * oz > 0.08) hidden.push(i);
+  }
+  hidden.sort((a, b) => a - b);
+  return hidden.join(",");
 }
 
 type WallName = "front" | "back" | "left" | "right";
@@ -81,12 +127,16 @@ function getWallsToHideFromCamera(
 
 function Room() {
   const wallColor = useWardrobeStore((s) => s.room.wallColor);
-  const floorStyle = useWardrobeStore((s) => s.room.floorStyle);
+  const roomSettings = useWardrobeStore((s) => s.room);
+  const { hw, hd } = wardrobeRoomHalfExtents(roomSettings);
+  const w = hw * 2;
+  const d = hd * 2;
+  const outline = roomSettings.floorOutline;
+  const openEdgeIndices = roomSettings.floorOpenEdgeIndices ?? [];
+  const usePoly = Boolean(outline && outline.length >= 3);
   const { camera, invalidate } = useThree();
 
-  const w = 6;
-  const d = 5;
-  const h = 3.2;
+  const h = roomSettings.roomHeightM ?? DEFAULT_PREVIEW_ROOM_HEIGHT_M;
   const T = WALL_T;
 
   const [viewState, setViewState] = useState<{ wallsToHide: WallName[]; hideCeiling: boolean }>(() => ({
@@ -94,6 +144,7 @@ function Room() {
     hideCeiling: true,
   }));
   const { wallsToHide, hideCeiling } = viewState;
+  const [polyHiddenDigest, setPolyHiddenDigest] = useState("");
 
   const frameCount = useRef(0);
   useFrame(() => {
@@ -101,68 +152,311 @@ function Room() {
     if (frameCount.current % 6 !== 0) return;
     const cameraAboveCeiling = camera.position.y > h;
     const nextHideCeiling = cameraAboveCeiling;
-    const nextWalls = getWallsToHideFromCamera(camera, w, d);
-    setViewState((prev) => {
-      const wallsChanged =
-        nextWalls.length !== prev.wallsToHide.length ||
-        nextWalls.some((wall, i) => prev.wallsToHide[i] !== wall);
-      if (!wallsChanged && prev.hideCeiling === nextHideCeiling) return prev;
-      return { wallsToHide: nextWalls, hideCeiling: nextHideCeiling };
-    });
+    if (usePoly && outline) {
+      const nextDig = polygonWallHiddenDigest(outline, openEdgeIndices, camera);
+      setPolyHiddenDigest((prev) => (prev !== nextDig ? nextDig : prev));
+      setViewState((prev) =>
+        prev.hideCeiling === nextHideCeiling ? prev : { ...prev, hideCeiling: nextHideCeiling },
+      );
+    } else {
+      const nextWalls = getWallsToHideFromCamera(camera, w, d);
+      setViewState((prev) => {
+        const wallsChanged =
+          nextWalls.length !== prev.wallsToHide.length ||
+          nextWalls.some((wall, i) => prev.wallsToHide[i] !== wall);
+        if (!wallsChanged && prev.hideCeiling === nextHideCeiling) return prev;
+        return { wallsToHide: nextWalls, hideCeiling: nextHideCeiling };
+      });
+    }
   });
+
+  const hiddenPolyEdgeSet = useMemo(() => {
+    const s = new Set<number>();
+    if (!polyHiddenDigest) return s;
+    for (const part of polyHiddenDigest.split(",")) {
+      const n = parseInt(part, 10);
+      if (!Number.isNaN(n)) s.add(n);
+    }
+    return s;
+  }, [polyHiddenDigest]);
+
+  const openEdgeKey = openEdgeIndices.join(",");
+
+  const rectangularFloorGeometry = useMemo(
+    () => new THREE.BoxGeometry(w + T * 2, T, d + T * 2),
+    [w, d, T],
+  );
+
+  useEffect(() => () => rectangularFloorGeometry.dispose(), [rectangularFloorGeometry]);
+
+  const polyExtrude = useMemo(() => {
+    if (!usePoly || !outline) {
+      return { floor: null as THREE.ExtrudeGeometry | null, ceiling: null as THREE.ExtrudeGeometry | null };
+    }
+    const shape = createOutlineShapeXZ(outline);
+    const floorGeom = new THREE.ExtrudeGeometry(shape, { depth: T, bevelEnabled: false });
+    floorGeom.rotateX(Math.PI / 2);
+    const ceilingGeom = new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: false });
+    ceilingGeom.rotateX(Math.PI / 2);
+    ceilingGeom.translate(0, h + 0.08, 0);
+    return { floor: floorGeom, ceiling: ceilingGeom };
+  }, [usePoly, outline, T, h]);
+
+  useEffect(() => {
+    return () => {
+      polyExtrude.floor?.dispose();
+      polyExtrude.ceiling?.dispose();
+    };
+  }, [polyExtrude.floor, polyExtrude.ceiling]);
+
+  const polyFloorSlabMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: "#f4f2ef", roughness: 0.9, metalness: 0 }),
+    [],
+  );
+  useEffect(() => () => polyFloorSlabMaterial.dispose(), [polyFloorSlabMaterial]);
+
+  const polyFloorFinishGeometry = useMemo(() => {
+    if (!usePoly || !outline || outline.length < 3) return null;
+    const shape = createOutlineShapeXZ(outline);
+    const g = new THREE.ShapeGeometry(shape);
+    g.rotateX(Math.PI / 2);
+    return g;
+  }, [usePoly, outline]);
+  useEffect(() => {
+    return () => polyFloorFinishGeometry?.dispose();
+  }, [polyFloorFinishGeometry]);
+
+  const wallEdgeMetas = useMemo(() => {
+    if (!outline || !usePoly) return [];
+    const open = new Set(openEdgeIndices);
+    const n = outline.length;
+    const out: { edgeIndex: number; len: number; cx: number; cz: number; rotY: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      if (open.has(i)) continue;
+      const A = outline[i]!;
+      const B = outline[(i + 1) % n]!;
+      const { tx, tz, L, ox, oz } = edgeFrame(A.x, A.z, B.x, B.z);
+      if (L < 1e-6) continue;
+      const Mx = (A.x + B.x) / 2;
+      const Mz = (A.z + B.z) / 2;
+      const cx = Mx + ox * (T / 2);
+      const cz = Mz + oz * (T / 2);
+      const rotY = Math.atan2(-tz, tx);
+      out.push({ edgeIndex: i, len: L, cx, cz, rotY });
+    }
+    return out;
+  }, [outline, usePoly, openEdgeKey, T]);
+
+  const wallCornerPosts = useMemo(() => {
+    if (!outline || !usePoly) return [];
+    const open = new Set(openEdgeIndices);
+    const n = outline.length;
+    const posts: { i: number; x: number; z: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const eIn = (i - 1 + n) % n;
+      const eOut = i;
+      if (open.has(eIn) || open.has(eOut)) continue;
+      const prev = outline[eIn]!;
+      const cur = outline[i]!;
+      const next = outline[(i + 1) % n]!;
+      if (!isConvexVertexCCW(prev, cur, next)) continue;
+      const fIn = edgeFrame(prev.x, prev.z, cur.x, cur.z);
+      const fOut = edgeFrame(cur.x, cur.z, next.x, next.z);
+      posts.push({
+        i,
+        x: cur.x + (fIn.ox + fOut.ox) * (T / 2),
+        z: cur.z + (fIn.oz + fOut.oz) * (T / 2),
+      });
+    }
+    return posts;
+  }, [outline, usePoly, openEdgeIndices, T]);
+
+  const polyWallH = h + T;
+  const polyWallCY = (h - T) / 2;
 
   const edgeMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: "#f4f2ef", roughness: 0.9, metalness: 0 }),
     [],
   );
 
-  const wallMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: wallColor, emissive: wallColor, emissiveIntensity: 0.3, roughness: 0.85, metalness: 0 }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  const bbox = useMemo(() => ({ widthM: w, depthM: d, heightM: h }), [w, d, h]);
+
+  const polyWallMatByEdge = useMemo(() => {
+    const map = new Map<number, THREE.MeshStandardMaterial>();
+    if (!usePoly || !outline?.length) return map;
+    for (const wm of wallEdgeMetas) {
+      map.set(
+        wm.edgeIndex,
+        buildPlannerWallSurfaceMaterial(roomSettings, bbox, wm.len, polyWallH, {
+          onTextureUpdate: invalidate,
+        }),
+      );
+    }
+    return map;
+  }, [
+    usePoly,
+    outline,
+    wallEdgeMetas,
+    bbox.widthM,
+    bbox.depthM,
+    bbox.heightM,
+    polyWallH,
+    wallColor,
+    roomSettings.wallMaterialMode,
+    roomSettings.wallCustomTextureUrl,
+    roomSettings.wallUvRepeatX,
+    roomSettings.wallUvRepeatY,
+    roomSettings.wallUvRotationDeg,
+    roomSettings.wallTileWidthCm,
+    roomSettings.wallTileHeightCm,
+    w,
+    d,
+    h,
+    invalidate,
+  ]);
+
+  const polyCornerWallMat = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(roomSettings, bbox, T, polyWallH, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      roomSettings.wallMaterialMode,
+      roomSettings.wallCustomTextureUrl,
+      roomSettings.wallUvRepeatX,
+      roomSettings.wallUvRepeatY,
+      roomSettings.wallUvRotationDeg,
+      roomSettings.wallTileWidthCm,
+      roomSettings.wallTileHeightCm,
+      T,
+      polyWallH,
+      bbox.widthM,
+      bbox.depthM,
+      bbox.heightM,
+      w,
+      d,
+      h,
+      invalidate,
+    ],
   );
+
   useEffect(() => {
-    wallMaterial.color.set(wallColor);
-    wallMaterial.emissive.set(wallColor);
-  }, [wallColor, wallMaterial]);
+    return () => {
+      polyWallMatByEdge.forEach((m) => m.dispose());
+      polyCornerWallMat.dispose();
+    };
+  }, [polyWallMatByEdge, polyCornerWallMat]);
 
-  const wallMaterials = useMemo(
-    () => [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, wallMaterial, wallMaterial],
-    [wallMaterial, edgeMaterial],
+  const wallMatWide = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(roomSettings, bbox, w, h, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      roomSettings.wallMaterialMode,
+      roomSettings.wallCustomTextureUrl,
+      roomSettings.wallUvRepeatX,
+      roomSettings.wallUvRepeatY,
+      roomSettings.wallUvRotationDeg,
+      roomSettings.wallTileWidthCm,
+      roomSettings.wallTileHeightCm,
+      w,
+      d,
+      h,
+      invalidate,
+    ],
   );
 
-  const floorMaterial = useMemo(() => {
-    return createPlannerFloorMaterial({
-      floorStyle,
-      repeat: [2.25, 2.25],
+  const wallMatDeep = useMemo(
+    () =>
+      buildPlannerWallSurfaceMaterial(roomSettings, bbox, d, h, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      roomSettings.wallMaterialMode,
+      roomSettings.wallCustomTextureUrl,
+      roomSettings.wallUvRepeatX,
+      roomSettings.wallUvRepeatY,
+      roomSettings.wallUvRotationDeg,
+      roomSettings.wallTileWidthCm,
+      roomSettings.wallTileHeightCm,
+      w,
+      d,
+      h,
+      invalidate,
+    ],
+  );
+
+  const wallMaterialsWide = useMemo(
+    () => [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, wallMatWide, wallMatWide],
+    [edgeMaterial, wallMatWide],
+  );
+
+  const wallMaterialsDeep = useMemo(
+    () => [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, wallMatDeep, wallMatDeep],
+    [edgeMaterial, wallMatDeep],
+  );
+
+  const plannerFloorMat = useMemo(() => {
+    const m = buildPlannerFloorMaterialFromRoom(roomSettings, [2.25, 2.25], {
+      floorWidthM: w,
+      floorDepthM: d,
       onTextureUpdate: invalidate,
       toneMode: "color",
       roughness: 0.7,
       metalness: 0,
     });
-  }, [floorStyle, invalidate]);
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -1;
+    m.polygonOffsetUnits = -1;
+    return m;
+  }, [
+    roomSettings.floorStyle,
+    roomSettings.floorMaterialMode,
+    roomSettings.floorCustomTextureUrl,
+    roomSettings.floorUvRepeatX,
+    roomSettings.floorUvRepeatY,
+    roomSettings.floorTextureWidthCm,
+    roomSettings.floorTextureHeightCm,
+    roomSettings.floorTextureStartSide,
+    roomSettings.floorLayoutPattern,
+    roomSettings.floorUvRotationDeg,
+    roomSettings.floorTileWidthCm,
+    roomSettings.floorTileHeightCm,
+    roomSettings.floorTileGroutCm,
+    roomSettings.floorTileGroutColor,
+    w,
+    d,
+    invalidate,
+  ]);
 
-  const floorMaterials = useMemo(
-    () => [edgeMaterial, edgeMaterial, floorMaterial, edgeMaterial, edgeMaterial, edgeMaterial],
-    [floorMaterial, edgeMaterial],
+  const floorSlabMaterials = useMemo(
+    () => [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial],
+    [edgeMaterial],
   );
-
-  const ceilingColor = useMemo(() => {
-    const [r, g, b] = hexToRgb(wallColor);
-    const f = 0.5;
-    return `rgb(${clamp255(r + (255 - r) * f)},${clamp255(g + (255 - g) * f)},${clamp255(b + (255 - b) * f)})`;
-  }, [wallColor]);
 
   const ceilingMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: ceilingColor, emissive: ceilingColor, emissiveIntensity: 0.35, roughness: 0.95, metalness: 0 }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    () =>
+      buildPlannerCeilingSurfaceMaterial(roomSettings, bbox, {
+        onTextureUpdate: invalidate,
+      }),
+    [
+      wallColor,
+      roomSettings.ceilingMaterialMode,
+      roomSettings.ceilingCustomTextureUrl,
+      roomSettings.ceilingUvRepeatX,
+      roomSettings.ceilingUvRepeatY,
+      roomSettings.ceilingUvRotationDeg,
+      roomSettings.ceilingTileWidthCm,
+      roomSettings.ceilingTileHeightCm,
+      w,
+      d,
+      invalidate,
+    ],
   );
-  useEffect(() => {
-    ceilingMaterial.color.set(ceilingColor);
-    ceilingMaterial.emissive.set(ceilingColor);
-    invalidate();
-  }, [ceilingColor, ceilingMaterial, invalidate]);
 
   const ceilingMaterials = useMemo(
     () => [edgeMaterial, edgeMaterial, edgeMaterial, ceilingMaterial, edgeMaterial, edgeMaterial],
@@ -231,11 +525,96 @@ function Room() {
     ["back", "left"], ["back", "right"], ["front", "left"], ["front", "right"],
   ];
 
+  if (usePoly && polyExtrude.floor && polyExtrude.ceiling && outline) {
+    return (
+      <group>
+        <mesh geometry={polyExtrude.floor} material={polyFloorSlabMaterial} receiveShadow />
+        {polyFloorFinishGeometry ? (
+          <mesh
+            position={[0, 0.004, 0]}
+            geometry={polyFloorFinishGeometry}
+            material={plannerFloorMat}
+            receiveShadow
+            renderOrder={1}
+          />
+        ) : null}
+        {wallEdgeMetas.map((wm) => {
+          const hideWall = hiddenPolyEdgeSet.has(wm.edgeIndex);
+          return (
+            <mesh
+              key={wm.edgeIndex}
+              position={[wm.cx, polyWallCY, wm.cz]}
+              rotation={[0, wm.rotY, 0]}
+              material={
+                hideWall ? invisibleShadowMat : polyWallMatByEdge.get(wm.edgeIndex) ?? invisibleShadowMat
+              }
+              castShadow
+              receiveShadow={!hideWall}
+            >
+              <boxGeometry args={[wm.len, polyWallH, T]} />
+            </mesh>
+          );
+        })}
+        {wallCornerPosts.map((p) => {
+          const nV = outline.length;
+          const eIn = (p.i - 1 + nV) % nV;
+          const eOut = p.i;
+          if (hiddenPolyEdgeSet.has(eIn) && hiddenPolyEdgeSet.has(eOut)) {
+            return null;
+          }
+          return (
+            <mesh key={`corner-${p.i}`} position={[p.x, polyWallCY, p.z]} material={polyCornerWallMat} castShadow receiveShadow>
+              <boxGeometry args={[T, polyWallH, T]} />
+            </mesh>
+          );
+        })}
+        {!hideCeiling ? (
+          <mesh geometry={polyExtrude.ceiling} material={ceilingMaterial} castShadow receiveShadow />
+        ) : (
+          <mesh geometry={polyExtrude.ceiling} material={invisibleShadowMat} castShadow />
+        )}
+        {!hideCeiling &&
+          lightPositions.map((pos, i) => (
+            <group key={i} position={pos}>
+              <mesh position={[0, -0.03, 0]} material={lightHousing}>
+                <cylinderGeometry args={[0.1, 0.1, 0.06, 32, 1, true]} />
+              </mesh>
+              <mesh position={[0, -0.03, 0]} material={lightReflector}>
+                <cylinderGeometry args={[0.065, 0.09, 0.048, 32, 1, true]} />
+              </mesh>
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} material={lightHousing}>
+                <ringGeometry args={[0.092, 0.115, 32]} />
+              </mesh>
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.058, 0]} material={lightBulb}>
+                <circleGeometry args={[0.055, 24]} />
+              </mesh>
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.003, 0]} material={lightGlow} renderOrder={-1}>
+                <circleGeometry args={[0.35, 32]} />
+              </mesh>
+            </group>
+          ))}
+        {lightPositions.map((pos, i) => (
+          <group key={`light-${i}`} position={pos}>
+            <pointLight position={[0, -0.08, 0]} intensity={1.4} distance={h * 2.2} decay={2} color="#fff8ee" />
+            <pointLight position={[0, -0.15, 0]} intensity={0.35} distance={h * 1.4} decay={2} color="#fffaf0" />
+          </group>
+        ))}
+      </group>
+    );
+  }
+
   return (
     <group>
       {/* Floor slab */}
-      <mesh position={[0, -T / 2, 0]} receiveShadow material={floorMaterials}>
-        <boxGeometry args={[w + T * 2, T, d + T * 2]} />
+      <mesh geometry={rectangularFloorGeometry} position={[0, -T / 2, 0]} receiveShadow material={floorSlabMaterials} />
+      <mesh
+        position={[0, 0.004, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+        material={plannerFloorMat}
+        renderOrder={1}
+      >
+        <planeGeometry args={[w, d]} />
       </mesh>
 
       {/* AO strips — only when wall is visible */}
@@ -267,7 +646,13 @@ function Room() {
             key={wd.name}
             position={wd.pos}
             rotation={wd.rot}
-            material={hidden ? invisibleShadowMat : wallMaterials}
+            material={
+              hidden
+                ? invisibleShadowMat
+                : wd.name === "back" || wd.name === "front"
+                  ? wallMaterialsWide
+                  : wallMaterialsDeep
+            }
             castShadow
             receiveShadow={!hidden}
           >
@@ -337,50 +722,101 @@ function Room() {
   );
 }
 
+function WardrobeLegComposition({
+  liftM,
+  addonTransforms,
+  baseX,
+  interactive,
+  wardrobeGroupRef,
+}: {
+  liftM: number;
+  addonTransforms: { id: string; xM: number; yM: number }[];
+  baseX: number;
+  interactive: boolean;
+  wardrobeGroupRef: RefObject<THREE.Group | null>;
+}) {
+  return (
+    <group position={[baseX, 0, WARDROBE_LEG_GROUP_Z_BUMP_M]}>
+      <WardrobeBase3D />
+      <group ref={wardrobeGroupRef} position={[0, liftM, 0]}>
+        <WardrobeFrame3D />
+        <WardrobeInterior3D />
+        <WardrobeDoors3D />
+        {interactive && (
+          <>
+            <SectionHighlights />
+            <DimensionAnnotations />
+            <SectionDividerDrags groupRef={wardrobeGroupRef} />
+            <InteriorComponentDrags groupRef={wardrobeGroupRef} />
+          </>
+        )}
+      </group>
+      {addonTransforms.map((t) => (
+        <group key={t.id} position={[t.xM, 0, 0]}>
+          <WardrobeBase3D />
+          <group position={[0, liftM + t.yM, 0]}>
+            <WardrobeFrame3D />
+            <WardrobeInterior3D />
+            <WardrobeDoors3D />
+          </group>
+        </group>
+      ))}
+    </group>
+  );
+}
+
 /* ── Camera ───────────────────────────────────────────────────────── */
 
 function CameraController() {
   const { camera } = useThree();
-  const frame = useWardrobeStore((s) => s.config.frame);
-  const base = useWardrobeStore((s) => s.config.base);
+  const config = useWardrobeStore((s) => s.config);
+  const frame = config.frame;
+  const base = config.base;
+  const room = useWardrobeStore((s) => s.room);
   const viewMode = useWardrobeStore((s) => s.ui.viewMode);
   const dividerDragActive = useWardrobeStore((s) => s.ui.dividerDragActive);
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
 
-  const W = frame.width * CM;
   const H = frame.height * CM;
   const D = frame.depth * CM;
   const liftM = wardrobeBaseLiftCm(clampWardrobeBase(base)) * CM;
-  const cx = 0;
-  const cy = liftM + H / 2;
-  const wardrobeZ = -(2.5 - D / 2);
+  const Wtot = wardrobeCompositionWidthMeters(config);
+
+  const legItems = useMemo(() => wardrobeLayoutLegItems(room, Wtot, D), [room, Wtot, D]);
+  const tcx = legItems.reduce((acc, l) => acc + l.xM, 0) / Math.max(1, legItems.length);
+  const tcz = legItems.reduce((acc, l) => acc + l.zM, 0) / Math.max(1, legItems.length);
+  const bridgeY = wardrobeLayoutGeometry(room) === "bridge" ? wardrobeBridgeLiftMeters(room) : 0;
+  const cy = liftM + H / 2 + bridgeY;
+
+  const { hw, hd } = wardrobeRoomHalfExtents(room);
+  const span = Math.max(hw * 2, hd * 2, Wtot, 4);
 
   useEffect(() => {
-    const dist = Math.max(4, Math.max(W, H + liftM) * 1.8);
+    const dist = Math.max(4.8, Math.max(Wtot, H + liftM + bridgeY) * 1.85, span * 1.05);
 
     if (viewMode === "front") {
-      camera.position.set(cx, cy, wardrobeZ + dist);
+      camera.position.set(tcx, cy, tcz + dist);
     } else if (viewMode === "side") {
-      camera.position.set(cx + dist, cy, wardrobeZ);
+      camera.position.set(tcx + dist, cy, tcz);
     } else {
-      camera.position.set(cx, cy + dist * 0.15, wardrobeZ + dist * 1.4);
+      camera.position.set(tcx, cy + dist * 0.15, tcz + dist * 1.35);
     }
 
     if (controlsRef.current) {
-      controlsRef.current.target.set(cx, cy, wardrobeZ);
+      controlsRef.current.target.set(tcx, cy, tcz);
       controlsRef.current.update();
     }
-  }, [viewMode, W, H, D, camera, cx, cy, wardrobeZ, liftM]);
+  }, [viewMode, H, Wtot, camera, tcx, tcz, cy, liftM, bridgeY, span]);
 
   return (
     <OrbitControls
       ref={controlsRef}
-      target={[cx, cy, wardrobeZ]}
+      target={[tcx, cy, tcz]}
       enableRotate={!dividerDragActive}
       enablePan={!dividerDragActive}
       enableZoom
       minDistance={0.3}
-      maxDistance={12}
+      maxDistance={14}
       maxPolarAngle={Math.PI / 2 - 0.05}
     />
   );
@@ -389,35 +825,24 @@ function CameraController() {
 /* ── Scene ────────────────────────────────────────────────────────── */
 
 function Scene() {
-  const frame = useWardrobeStore((s) => s.config.frame);
-  const base = useWardrobeStore((s) => s.config.base);
-  const W = frame.width * CM;
-  const H = frame.height * CM;
+  const config = useWardrobeStore((s) => s.config);
+  const frame = config.frame;
+  const base = config.base;
+  const room = useWardrobeStore((s) => s.room);
   const D = frame.depth * CM;
   const liftM = wardrobeBaseLiftCm(clampWardrobeBase(base)) * CM;
   const wardrobeGroupRef = useRef<THREE.Group>(null);
-  const addons = useWardrobeStore((s) => s.config.addons ?? EMPTY_ADDONS);
-  const seamStyle = useWardrobeStore((s) => s.config.seamStyle ?? "independent");
-  const seamOffsetM = seamStyle === "shared" ? -0.018 : 0;
+  const noopGroupRef = useRef<THREE.Group>(null);
 
-  // Cumulative offset per addon. "right" accumulates along +X; "top"
-  // accumulates along +Y. The primary module always sits at (0, 0). Each
-  // addon renders the same wardrobe carcass/interior/doors — identical copy
-  // for now; the sheet viewer and cut-list multiply panels per addon.
-  let rightCount = 0;
-  let topCount = 0;
-  const addonTransforms = addons.map((addon) => {
-    if (addon.position === "right") {
-      rightCount += 1;
-      return { id: addon.id, xM: (W + seamOffsetM) * rightCount, yM: 0 };
-    }
-    topCount += 1;
-    return { id: addon.id, xM: 0, yM: (H + seamOffsetM) * topCount };
-  });
-  const totalRightM = rightCount * (W + seamOffsetM);
+  const Wtot = wardrobeCompositionWidthMeters(config);
 
-  // Center the whole composition on X so added modules stay visible.
-  const baseX = -(W + totalRightM) / 2;
+  const legItems = useMemo(() => wardrobeLayoutLegItems(room, Wtot, D), [room, Wtot, D]);
+  const interactiveLegIdx = useMemo(
+    () => wardrobeLayoutInteractiveLegIndex(room, legItems),
+    [room, legItems],
+  );
+
+  const bridgeExtraY = wardrobeLayoutGeometry(room) === "bridge" ? wardrobeBridgeLiftMeters(room) : 0;
 
   return (
     <>
@@ -426,33 +851,27 @@ function Scene() {
 
       <Room />
 
-      {/* Primary wardrobe against back wall, offset forward past the skirting board */}
-      <group position={[baseX, 0, -(2.5 - D / 2) + 0.013]}>
-        <WardrobeBase3D />
-        <group ref={wardrobeGroupRef} position={[0, liftM, 0]}>
-          <WardrobeFrame3D />
-          <WardrobeInterior3D />
-          <WardrobeDoors3D />
-          <SectionHighlights />
-          <DimensionAnnotations />
-          <SectionDividerDrags groupRef={wardrobeGroupRef} />
-          <InteriorComponentDrags groupRef={wardrobeGroupRef} />
-        </group>
-
-        {/* Addon modules — identical copies at computed offsets. Each reuses
-            the primary wardrobe's carcass/interior/doors, so designers see
-            the final composition at scale. */}
-        {addonTransforms.map((t) => (
-          <group key={t.id} position={[t.xM, 0, 0]}>
-            <WardrobeBase3D />
-            <group position={[0, liftM + t.yM, 0]}>
-              <WardrobeFrame3D />
-              <WardrobeInterior3D />
-              <WardrobeDoors3D />
-            </group>
+      {legItems.map((leg, legIdx) => {
+        const legCfg = wardrobeConfigWithFrameWidth(config, leg.frameWidthCm);
+        const row = wardrobeEmbedRowLayoutFromConfig(legCfg);
+        return (
+          <group
+            key={`${leg.label}-${legIdx}`}
+            position={[leg.xM, bridgeExtraY, leg.zM]}
+            rotation={[0, leg.rotationY, 0]}
+          >
+            <WardrobeLegLayoutProvider frameWidthCm={leg.frameWidthCm}>
+              <WardrobeLegComposition
+                liftM={liftM}
+                addonTransforms={row.addonTransforms}
+                baseX={row.baseX}
+                interactive={legIdx === interactiveLegIdx}
+                wardrobeGroupRef={legIdx === interactiveLegIdx ? wardrobeGroupRef : noopGroupRef}
+              />
+            </WardrobeLegLayoutProvider>
           </group>
-        ))}
-      </group>
+        );
+      })}
 
       <CameraController />
     </>

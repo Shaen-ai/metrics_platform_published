@@ -21,6 +21,10 @@ export interface Opening {
    * Edge `i` runs from vertex `i` to vertex `(i + 1) % n` (CCW from above).
    */
   edgeIndex?: number;
+  /** Optional albedo URL mapped onto the door slab mesh (`door` only). */
+  doorTextureUrl?: string;
+  /** Optional `.glb` URL scaled into the slab volume (`door` only). Takes precedence over `doorTextureUrl` when load succeeds. */
+  doorModelUrl?: string;
 }
 
 /** Floor style options — laminate only, large rectangular planks (120–200cm × 15–25cm) */
@@ -138,6 +142,135 @@ export const FLOOR_STYLE_TINTS: Record<FloorStyle, FloorTint> = {
   "laminate-rich-espresso": { hue: "#432818", lift: -0.28, tint: "#ffffff" },
 };
 
+/** Persisted floor appearance beyond built-in laminate presets */
+export type FloorMaterialMode = "preset" | "customImage" | "tile";
+export type FloorTextureStartSide = "left" | "right" | "back" | "front";
+export type FloorLayoutPattern = "aligned" | "staggered";
+
+export interface PlannerSurfaceMaterialFields {
+  materialName?: string;
+  materialUnit?: string;
+  materialPricePerUnit?: number;
+}
+
+export interface PlannerFloorSurfaceFields {
+  floorMaterialMode?: FloorMaterialMode;
+  /** Image URL for `customImage` / tile albedo (`tile`). Seamless textures tile best. */
+  floorCustomTextureUrl?: string;
+  floorUvRepeatX?: number;
+  floorUvRepeatY?: number;
+  /** Physical size of one texture image repeat, used for catalog laminates / sheets. */
+  floorTextureWidthCm?: number;
+  floorTextureHeightCm?: number;
+  /** Which floor edge should align to the first full texture repeat. */
+  floorTextureStartSide?: FloorTextureStartSide;
+  /** Installation layout: straight aligned grid or staggered offset joints. */
+  floorLayoutPattern?: FloorLayoutPattern;
+  /** Material pricing metadata captured from admin materials/catalog selections. */
+  floorMaterialName?: string;
+  floorMaterialUnit?: string;
+  floorMaterialPricePerUnit?: number;
+  floorMaterialProductWidthCm?: number;
+  floorMaterialProductHeightCm?: number;
+  /** UV rotation in degrees (applied around repeat center). */
+  floorUvRotationDeg?: number;
+  /** Ceramic tile grid — used when `floorMaterialMode === "tile"` */
+  floorTileWidthCm?: number;
+  floorTileHeightCm?: number;
+  floorTileGroutCm?: number;
+  floorTileGroutColor?: string;
+}
+
+export type PlannerFloorSurfacePatch = Partial<PlannerFloorSurfaceFields>;
+
+/** Walls / ceiling: solid tint, custom repeating texture, or tile-style repeats */
+export type PlannerInteriorSurfaceMode = "color" | "customImage" | "tile";
+
+export interface PlannerWallSurfaceFields {
+  wallMaterialMode?: PlannerInteriorSurfaceMode;
+  /** Used when mode is `customImage` or `tile` (tile albedo). */
+  wallCustomTextureUrl?: string;
+  wallUvRepeatX?: number;
+  wallUvRepeatY?: number;
+  /** Physical size of one wallpaper / panel texture repeat. */
+  wallTextureWidthCm?: number;
+  wallTextureHeightCm?: number;
+  wallMaterialName?: string;
+  wallMaterialUnit?: string;
+  wallMaterialPricePerUnit?: number;
+  wallMaterialProductWidthCm?: number;
+  wallMaterialProductHeightCm?: number;
+  wallUvRotationDeg?: number;
+  wallTileWidthCm?: number;
+  wallTileHeightCm?: number;
+  wallTileGroutCm?: number;
+  wallTileGroutColor?: string;
+}
+
+export interface PlannerCeilingSurfaceFields {
+  ceilingMaterialMode?: PlannerInteriorSurfaceMode;
+  ceilingCustomTextureUrl?: string;
+  ceilingUvRepeatX?: number;
+  ceilingUvRepeatY?: number;
+  /** Physical size of one ceiling material texture repeat. */
+  ceilingTextureWidthCm?: number;
+  ceilingTextureHeightCm?: number;
+  ceilingMaterialName?: string;
+  ceilingMaterialUnit?: string;
+  ceilingMaterialPricePerUnit?: number;
+  ceilingMaterialProductWidthCm?: number;
+  ceilingMaterialProductHeightCm?: number;
+  ceilingUvRotationDeg?: number;
+  ceilingTileWidthCm?: number;
+  ceilingTileHeightCm?: number;
+  ceilingTileGroutCm?: number;
+  ceilingTileGroutColor?: string;
+}
+
+export type PlannerWallCeilingSurfacePatch = Partial<
+  PlannerWallSurfaceFields & PlannerCeilingSurfaceFields
+>;
+
+/** Skirting board / plinth appearance fields persisted on Room */
+export interface PlannerPlinthSurfaceFields {
+  /** Whether to show plinth/skirting boards. Defaults to true. */
+  plinthEnabled?: boolean;
+  /** Height of the plinth strip in cm. Defaults to 8. */
+  plinthHeightCm?: number;
+  /** Depth (thickness) of the plinth strip in cm. Defaults to 1.2. */
+  plinthDepthCm?: number;
+  /** Solid color when mode is "color". */
+  plinthColor?: string;
+  /** "color" = solid color, "catalog" = catalog product texture. */
+  plinthMaterialMode?: "color" | "catalog";
+  /** Texture image URL from catalog selection. */
+  plinthCustomTextureUrl?: string;
+  /** Pricing / BOM metadata captured from catalog selection. */
+  plinthMaterialName?: string;
+  plinthMaterialUnit?: string;
+  plinthMaterialPricePerUnit?: number;
+  plinthMaterialProductWidthCm?: number;
+  plinthMaterialProductHeightCm?: number;
+}
+
+export type PlannerPlinthSurfacePatch = Partial<PlannerPlinthSurfaceFields>;
+
+const VALID_FLOOR_STYLES = new Set(LAMINATE_OPTIONS.map((o) => o.value));
+
+/** Normalize persisted / legacy floor preset ids */
+export function normalizeFloorStyle(style: string | undefined): FloorStyle {
+  if (style && VALID_FLOOR_STYLES.has(style as FloorStyle)) return style as FloorStyle;
+  const legacyMap: Record<string, FloorStyle> = {
+    laminate: "laminate-natural-oak",
+    "wood-light": "laminate-light-oak",
+    "wood-warm": "laminate-natural-oak",
+    "wood-dark": "laminate-aged-oak",
+    "marble-white": "laminate-soft-beige",
+    "tile-herringbone": "laminate-natural-oak",
+  };
+  return legacyMap[style ?? ""] ?? "laminate-natural-oak";
+}
+
 /**
  * Structural beam on a wall or ceiling.
  * - Wall: `wallRun` — horizontal = member along the wall just under the ceiling; vertical = column from floor up.
@@ -179,7 +312,11 @@ export interface FloorOutlinePoint {
 }
 
 /** Room dimensions in meters */
-export interface Room {
+export interface Room
+  extends PlannerFloorSurfaceFields,
+    PlannerWallSurfaceFields,
+    PlannerCeilingSurfaceFields,
+    PlannerPlinthSurfaceFields {
   width: number;  // X axis
   depth: number;  // Z axis
   height: number; // Y at room center (0,0); ceiling plane reference
@@ -220,6 +357,8 @@ export interface PlannerCatalogItem {
   additionalCategories?: string[];
   allCategories?: string[];
   subCategory?: string;
+  /** Merchant mode pillar (furniture / soft / home-tech) — used for sidebar grouping. */
+  modeId?: string;
   vendor: string;
   price: number;
   width: number;   // meters
@@ -231,6 +370,40 @@ export interface PlannerCatalogItem {
   modelStatus?: "queued" | "processing" | "done" | "failed";
   wallMounted?: boolean;
   mountHeight?: number; // meters above floor for wall-mounted items
+  /** When true (default if omitted in outdoor planner), GLB can show outdoor cushion editor. */
+  supportsOutdoorCushions?: boolean;
+  /** Merchant defaults for cushion layout; merged when placing in outdoor planner. */
+  outdoorCushionDefaults?: Record<string, unknown> | null;
+  /** When true, this product supports per-part fabric/upholstery selection. */
+  isFabricCustomizable?: boolean;
+  /** Parts the admin defined for fabric customization (e.g. Seat, Back). */
+  fabricParts?: Array<{ id: string; name: string; allowedMaterialIds: string[] | null }>;
+  /** Overrides keyword-based mapping in `@/config/placementRules`. */
+  placementRuleId?: string;
+  /** Saved wardrobe: planner room / layout snapshot for multi-leg sheet packing in bedroom. */
+  wardrobePlannerRoom?: import("./wardrobe/types").RoomSettings;
+  /** Real-world dimensions of what the surface texture photo represents (cm). */
+  surfaceTextureWidthCm?: number | null;
+  surfaceTextureHeightCm?: number | null;
+  /** Physical size of one sellable unit / plank (cm) — used as the board cell size in floor/wall rendering. */
+  surfaceItemWidthCm?: number | null;
+  surfaceItemHeightCm?: number | null;
+  surfaceLayoutPattern?: string | null;
+}
+
+/** Last-hit surface for smart placement & drag constraints (persisted). */
+export interface PlacementSurfaceMeta {
+  surfaceType: string;
+  zone: string;
+  wallId?: string;
+}
+
+/** Serializable movement constraint from PlacementManager.constrainMovement. */
+export interface MovementConstraintMeta {
+  mode: "wall" | "floor" | "ceiling";
+  heightLocked: boolean;
+  /** Unit wall normal (world) when mode is wall */
+  wallNormal?: [number, number, number];
 }
 
 /** A furniture item placed in the room */
@@ -254,6 +427,29 @@ export interface PlacedItem {
    * Kept on the instance so edits in Wardrobe planner do not change placed copies.
    */
   wardrobeConfig?: import("./wardrobe/types").WardrobeConfig;
+  /** Saved wardrobe layout footprint — drives embed sheet leg count in bedroom. */
+  wardrobePlannerRoom?: import("./wardrobe/types").RoomSettings;
+  /** True once footprint-local origin matches bbox center (see planner wardrobe migration). */
+  wardrobeFootprintOriginCentered?: boolean;
+  /** Version for persisted wardrobe origin migration. */
+  wardrobeFootprintOriginVersion?: number;
+  /** Outdoor planner: cushion segmentation + upholstery ids per instance. */
+  outdoorCushionConfig?: import("./outdoor/types").OutdoorCushionConfig;
+  /**
+   * Per-part fabric/upholstery material id map (partId → materialId).
+   * Populated on placement for fabric-customizable soft furniture.
+   */
+  fabricPartMaterialIds?: Record<string, string>;
+  /**
+   * Fitted GLB plan size (meters) when cushions are on — computed in the scene, not persisted.
+   * Used for drag/clamp so placement matches the rendered mesh + cushions.
+   */
+  outdoorMeshFootprint?: { width: number; depth: number };
+  /** Resolved from catalog / optional override; drives placement rules. */
+  placementRuleId?: string;
+  placementSurface?: PlacementSurfaceMeta;
+  placementWarnings?: string[];
+  movementConstraint?: MovementConstraintMeta;
 }
 
 /** Linear measure for planner UI (room, openings, sidebar). Stored data stays in meters. */
@@ -294,6 +490,12 @@ export interface PlannerState {
   setRoom: (room: Room) => void;
   setWallColor: (color: string) => void;
   setFloorStyle: (style: FloorStyle) => void;
+  /** Merge floor preset / custom image / tile fields (normalized + persisted). */
+  setPlannerFloorSurface: (patch: PlannerFloorSurfacePatch) => void;
+  /** Merge wall / ceiling texture fields (normalized + persisted). */
+  setPlannerWallCeilingSurface: (patch: PlannerWallCeilingSurfacePatch) => void;
+  /** Merge plinth / skirting board appearance fields (normalized + persisted). */
+  setPlannerPlinthSurface: (patch: PlannerPlinthSurfacePatch) => void;
   addOpening: (opening: Opening) => void;
   removeOpening: (id: string) => void;
   addBeam: (beam: RoomBeam) => void;
@@ -304,9 +506,35 @@ export interface PlannerState {
   addItem: (catalogId: string) => void;
   removeItem: (id: string) => void;
   updateItemPosition: (id: string, x: number, z: number) => void;
+  /** Full placement patch (smart placement / drag pipeline). */
+  updateItemPlacement: (
+    id: string,
+    patch: Partial<
+      Pick<
+        PlacedItem,
+        | "position"
+        | "positionY"
+        | "rotationY"
+        | "placementSurface"
+        | "placementWarnings"
+        | "movementConstraint"
+        | "placementRuleId"
+        | "wardrobeConfig"
+        | "wardrobePlannerRoom"
+      >
+    >,
+  ) => void;
   updateItemColor: (id: string, color: string) => void;
   updateItemGltfFinishMaterial: (id: string, materialId: string | undefined) => void;
   updateItemDimensions: (id: string, dims: { width?: number; depth?: number; height?: number }) => void;
+  setOutdoorCushionConfig: (id: string, config: import("./outdoor/types").OutdoorCushionConfig) => void;
+  /** Set a single fabric material selection for a specific part of a placed item. */
+  setFabricPartMaterial: (itemId: string, partId: string, materialId: string) => void;
+  /** Runtime-only: sync fitted mesh footprint for outdoor clamp (see PlacedItem.outdoorMeshFootprint). */
+  setOutdoorMeshFootprint: (
+    id: string,
+    footprint: { width: number; depth: number } | null,
+  ) => void;
   rotateItem: (id: string, deltaRadians: number) => void;
   toggleItemMovable: (id: string) => void;
   selectItem: (id: string | null) => void;
@@ -331,8 +559,19 @@ export interface PlannerState {
   webglContextLost: boolean;
   setWebglContextLost: (lost: boolean) => void;
 
+  /**
+   * Set true after `fetchCatalog` resolves so texture sync can trust planner `catalog` (incl. library).
+   */
+  plannerCatalogHydratedFromApi: boolean;
+
   // Catalog
   fetchCatalog: (adminSlug?: string, plannerType?: string) => Promise<void>;
+  /**
+   * After Materials + catalog HTTP payloads load, remove room surface texture URLs that no longer
+   * exist in the tenant DB response (plinth, floor, walls, ceiling). Persists when something is cleared.
+   * @param opts.skipHydrationGate — use when `catalog` was just updated (e.g. after `fetchCatalog` or merging wardrobes).
+   */
+  syncRoomSurfaceTextures: (opts?: { skipHydrationGate?: boolean }) => void;
 
   // Persistence
   resetScene: () => void;

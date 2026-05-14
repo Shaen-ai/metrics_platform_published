@@ -1,17 +1,18 @@
 "use client";
 
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import * as THREE from "three";
-import { useThree } from "@react-three/fiber";
+import { useThree, useFrame } from "@react-three/fiber";
 import { usePlannerStore } from "../store/usePlannerStore";
 import type { FloorOutlinePoint, Opening, Room } from "../types";
-import { createPlannerFloorMaterial } from "../laminateFloor";
+import { buildPlannerFloorMaterialFromRoom, buildPlannerWallSurfaceMaterial, buildPlannerCeilingSurfaceMaterial } from "../roomFloorMaterial";
 import { ROOM_WALL_THICKNESS_M as WALL_THICKNESS } from "../constants/roomGeometry";
 import {
   createPolygonWallSegmentWithHoles,
   edgeFrame,
   polygonWallHoleCutsForSegment,
 } from "../utils/polygonWallCsg";
+import { DoorSlabFinish } from "./DoorSlabFinish";
 
 const OPENING_TRIM_BIAS = 0.005;
 
@@ -61,9 +62,11 @@ function openingTrimWorldPosPolygon(
 function PolygonOpeningMeshes({
   opening,
   edge,
+  showBackdrop,
 }: {
   opening: Opening;
   edge: ReturnType<typeof outlineNormalAtEdge>;
+  showBackdrop: boolean;
 }) {
   const { ax, az, bx, bz, tx, tz, ox, oz, L } = edge;
   const halfLen = L / 2;
@@ -73,6 +76,8 @@ function PolygonOpeningMeshes({
     opening.height || (opening.type === "door" ? 2.1 : 1.2),
     Math.max(0.5, 2.8 - 0.04)
   );
+
+  const { invalidate } = useThree();
 
   const doorSlabMaterial = useMemo(
     () =>
@@ -140,6 +145,22 @@ function PolygonOpeningMeshes({
     []
   );
 
+  const windowViewMaterial = useMemo(() => {
+    const mat = new THREE.MeshBasicMaterial({
+      side: THREE.FrontSide,
+      depthWrite: false,
+    });
+    const loader = new THREE.TextureLoader();
+    loader.load("/planner/window-view.jpg", (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex;
+      mat.needsUpdate = true;
+      invalidate();
+    });
+    return mat;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     return () => {
       doorSlabMaterial.dispose();
@@ -147,6 +168,8 @@ function PolygonOpeningMeshes({
       doorHandleMaterial.dispose();
       windowGlassMaterial.dispose();
       windowFrameMaterial.dispose();
+      windowViewMaterial.map?.dispose();
+      windowViewMaterial.dispose();
     };
   }, [
     doorSlabMaterial,
@@ -154,7 +177,33 @@ function PolygonOpeningMeshes({
     doorHandleMaterial,
     windowGlassMaterial,
     windowFrameMaterial,
+    windowViewMaterial,
   ]);
+
+  // Parallax ref for the window view backdrop
+  const backdropRef = useRef<THREE.Mesh>(null);
+
+  useFrame(({ camera }) => {
+    const m = backdropRef.current;
+    if (!m || opening.type !== "window") return;
+    const sillH = openingHeight > 1.5 ? 0 : 0.8;
+    const wBaseY = sillH + openingHeight / 2;
+    const backdropDist = 0.02;
+    const Mx = (ax + bx) / 2;
+    const Mz = (az + bz) / 2;
+    const along = opening.position * halfLen;
+    const basePosX = Mx + tx * along + ox * backdropDist;
+    const basePosZ = Mz + tz * along + oz * backdropDist;
+    const PARALLAX = 0.12;
+    const MAX = Math.max(openingWidth, openingHeight) * 0.2;
+    // Project camera offset onto wall tangent and Y axes for direction-aware parallax
+    const camDx = camera.position.x - basePosX;
+    const camDz = camera.position.z - basePosZ;
+    const tangentOffset = camDx * tx + camDz * tz;
+    const dt = THREE.MathUtils.clamp(-tangentOffset * PARALLAX, -MAX, MAX);
+    const dy = THREE.MathUtils.clamp(-(camera.position.y - wBaseY) * PARALLAX, -MAX, MAX);
+    m.position.set(basePosX + tx * dt, wBaseY + dy, basePosZ + tz * dt);
+  });
 
   const T = WALL_THICKNESS;
 
@@ -192,9 +241,14 @@ function PolygonOpeningMeshes({
     return (
       <group key={opening.id}>
         <group position={openingPos} rotation={[0, rotationY + Math.PI, 0]}>
-          <mesh material={doorSlabMaterial} castShadow receiveShadow={false}>
-            <boxGeometry args={[slabW, slabH, doorThick]} />
-          </mesh>
+          <DoorSlabFinish
+            slabW={slabW}
+            slabH={slabH}
+            doorThick={doorThick}
+            textureUrl={opening.doorTextureUrl}
+            modelUrl={opening.doorModelUrl}
+            fallbackMaterial={doorSlabMaterial}
+          />
           <mesh position={[handleX, handleY, hFaceZ]} rotation={[Math.PI / 2, 0, 0]} material={doorHandleMaterial} castShadow>
             <cylinderGeometry args={[roseR, roseR, 0.006, 32]} />
           </mesh>
@@ -407,6 +461,33 @@ function PolygonOpeningMeshes({
       >
         <boxGeometry args={[frameThickness, stileH, T]} />
       </mesh>
+
+      {/* Landscape view — only on the first window in the room */}
+      {showBackdrop && (() => {
+        const backdropDist = 0.02;
+        // Oversize by 1.5× so the parallax shift never exposes the edge
+        const backdropW = openingWidth * 1.3;
+        const backdropH = openingHeight * 1.3;
+        const Mx = (ax + bx) / 2;
+        const Mz = (az + bz) / 2;
+        const along = opening.position * halfLen;
+        const ix = Mx + tx * along;
+        const iz = Mz + tz * along;
+        const bpx = ix + ox * backdropDist;
+        const bpz = iz + oz * backdropDist;
+        return (
+          <mesh
+            ref={backdropRef}
+            key="window-view-backdrop"
+            position={[bpx, windowBaseY, bpz]}
+            rotation={[0, rotationY, 0]}
+            material={windowViewMaterial}
+            renderOrder={-1}
+          >
+            <planeGeometry args={[backdropW, backdropH]} />
+          </mesh>
+        );
+      })()}
     </group>
   );
 }
@@ -422,6 +503,7 @@ function WallSegmentMesh({
   room,
   edgeIndex,
   openings,
+  kitchenWall,
 }: {
   ax: number;
   az: number;
@@ -433,7 +515,24 @@ function WallSegmentMesh({
   room: Room;
   edgeIndex: number;
   openings: Opening[];
+  kitchenWall: boolean;
 }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { ox, oz } = useMemo(() => edgeFrame(ax, az, bx, bz), [ax, az, bx, bz]);
+  const wallNormal = useMemo(
+    () => new THREE.Vector3(-ox, 0, -oz).normalize(),
+    [ox, oz]
+  );
+  useLayoutEffect(() => {
+    const m = meshRef.current;
+    if (!m) return;
+    m.userData.surfaceType = "wall";
+    m.userData.zone = "indoor";
+    m.userData.wallId = `edge-${edgeIndex}`;
+    m.userData.wallNormal = wallNormal.clone();
+    m.userData.kitchenWall = kitchenWall;
+  }, [edgeIndex, wallNormal, kitchenWall]);
+
   const geom = useMemo(() => {
     const segOpenings = openings.filter((o) => o.edgeIndex === edgeIndex);
     const { L } = edgeFrame(ax, az, bx, bz);
@@ -450,7 +549,7 @@ function WallSegmentMesh({
 
   useEffect(() => () => geom.dispose(), [geom]);
 
-  return <mesh geometry={geom} material={wallMaterial} castShadow receiveShadow />;
+  return <mesh ref={meshRef} geometry={geom} material={wallMaterial} castShadow receiveShadow />;
 }
 
 export default function PolygonRoomMesh() {
@@ -464,65 +563,119 @@ export default function PolygonRoomMesh() {
   const d = room.depth;
   const openEdge = new Set(room.openEdgeIndices ?? []);
 
-  const floorStyle = room.floorStyle ?? "laminate-natural-oak";
-
   const floorMaterial = useMemo(() => {
     const repX = Math.max(1.45, w * 0.4);
     const repY = Math.max(1.45, d * 0.4);
-    return createPlannerFloorMaterial({
-      floorStyle,
-      repeat: [repX, repY],
+    const m = buildPlannerFloorMaterialFromRoom(room, [repX, repY], {
+      floorWidthM: w,
+      floorDepthM: d,
       onTextureUpdate: invalidate,
       roughness: 0.75,
       metalness: 0,
     });
-  }, [floorStyle, w, d, invalidate]);
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -1;
+    m.polygonOffsetUnits = -1;
+    return m;
+  }, [
+    room.floorStyle,
+    room.floorMaterialMode,
+    room.floorCustomTextureUrl,
+    room.floorUvRepeatX,
+    room.floorUvRepeatY,
+    room.floorTextureWidthCm,
+    room.floorTextureHeightCm,
+    room.floorTextureStartSide,
+    room.floorLayoutPattern,
+    room.floorUvRotationDeg,
+    room.floorTileWidthCm,
+    room.floorTileHeightCm,
+    room.floorTileGroutCm,
+    room.floorTileGroutColor,
+    w,
+    d,
+    invalidate,
+  ]);
   useEffect(() => () => floorMaterial.dispose(), [floorMaterial]);
 
-  const wallColor = room.wallColor ?? "#fafafa";
-  const wallMaterial = useMemo(
+  const floorSlabMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: wallColor,
-        emissive: wallColor,
-        emissiveIntensity: 0.3,
-        roughness: 0.85,
+        color: "#f4f2ef",
+        roughness: 0.9,
         metalness: 0,
       }),
-    []
+    [],
   );
-  useEffect(() => {
-    wallMaterial.color.set(wallColor);
-    wallMaterial.emissive.set(wallColor);
-  }, [wallColor, wallMaterial]);
+  useEffect(() => () => floorSlabMaterial.dispose(), [floorSlabMaterial]);
 
-  const ceilingColor = useMemo(() => {
-    const hex = wallColor.replace("#", "");
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    const f = 0.5;
-    return `rgb(${Math.round(r + (255 - r) * f)},${Math.round(g + (255 - g) * f)},${Math.round(
-      b + (255 - b) * f
-    )})`;
-  }, [wallColor]);
+  const wallColor = room.wallColor ?? "#fafafa";
+  const bbox = useMemo(() => ({ widthM: w, depthM: d, heightM: h }), [w, d, h]);
+  const outlineKey = useMemo(() => outline.map((p) => `${p.x.toFixed(4)},${p.z.toFixed(4)}`).join("|"), [outline]);
+  const openEdgeKey = [...openEdge].sort((a, b) => a - b).join(",");
+
+  const wallMatPerEdge = useMemo(() => {
+    const map = new Map<number, THREE.MeshStandardMaterial>();
+    for (let i = 0; i < n; i++) {
+      if (openEdge.has(i)) continue;
+      const a = outline[i]!;
+      const b = outline[(i + 1) % n]!;
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      map.set(
+        i,
+        buildPlannerWallSurfaceMaterial(room, bbox, len, h, { onTextureUpdate: invalidate }),
+      );
+    }
+    return map;
+  }, [
+    outlineKey,
+    openEdgeKey,
+    n,
+    h,
+    bbox.widthM,
+    bbox.depthM,
+    bbox.heightM,
+    wallColor,
+    room.wallMaterialMode,
+    room.wallCustomTextureUrl,
+    room.wallUvRepeatX,
+    room.wallUvRepeatY,
+    room.wallUvRotationDeg,
+    room.wallTileWidthCm,
+    room.wallTileHeightCm,
+    invalidate,
+    room,
+    outline,
+    openEdge,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      wallMatPerEdge.forEach((m) => m.dispose());
+    };
+  }, [wallMatPerEdge]);
 
   const ceilingMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: ceilingColor,
-        emissive: ceilingColor,
-        emissiveIntensity: 0.35,
-        roughness: 0.95,
-        metalness: 0,
-      }),
-    [ceilingColor]
+    () => buildPlannerCeilingSurfaceMaterial(room, bbox, { onTextureUpdate: invalidate }),
+    [
+      wallColor,
+      room.ceilingMaterialMode,
+      room.ceilingCustomTextureUrl,
+      room.ceilingUvRepeatX,
+      room.ceilingUvRepeatY,
+      room.ceilingUvRotationDeg,
+      room.ceilingTileWidthCm,
+      room.ceilingTileHeightCm,
+      w,
+      d,
+      invalidate,
+      bbox.widthM,
+      bbox.depthM,
+      bbox.heightM,
+      room,
+    ],
   );
-  useEffect(() => {
-    ceilingMaterial.color.set(ceilingColor);
-    ceilingMaterial.emissive.set(ceilingColor);
-    invalidate();
-  }, [ceilingColor, ceilingMaterial, invalidate]);
+  useEffect(() => () => ceilingMaterial.dispose(), [ceilingMaterial]);
 
   const shape = useMemo(() => createOutlineShape(outline), [outline]);
 
@@ -530,6 +683,11 @@ export default function PolygonRoomMesh() {
     const g = new THREE.ExtrudeGeometry(shape, { depth: WALL_THICKNESS, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);
     g.translate(0, -WALL_THICKNESS / 2, 0);
+    return g;
+  }, [shape]);
+  const floorFinishGeometry = useMemo(() => {
+    const g = new THREE.ShapeGeometry(shape);
+    g.rotateX(-Math.PI / 2);
     return g;
   }, [shape]);
   const ceilingGeom = useMemo(() => {
@@ -542,9 +700,10 @@ export default function PolygonRoomMesh() {
   useEffect(() => {
     return () => {
       floorCeilingGeom.dispose();
+      floorFinishGeometry.dispose();
       ceilingGeom.dispose();
     };
-  }, [floorCeilingGeom, ceilingGeom]);
+  }, [floorCeilingGeom, floorFinishGeometry, ceilingGeom]);
 
   const openings = room.openings || [];
   const openingsDigest = openings
@@ -574,9 +733,40 @@ export default function PolygonRoomMesh() {
 
   const hideCeiling = topView;
 
+  const plannerType = usePlannerStore((s) => s.plannerType);
+  const kitchenWallTag =
+    plannerType === "kitchen" ||
+    plannerType === "kitchen-design" ||
+    (room.roomStyleTags?.includes("kitchen") ?? false);
+
+  const floorMeshRef = useRef<THREE.Mesh>(null);
+  const ceilingMeshRef = useRef<THREE.Mesh>(null);
+  useLayoutEffect(() => {
+    const fm = floorMeshRef.current;
+    if (fm) {
+      fm.userData.surfaceType = "floor";
+      fm.userData.zone = "indoor";
+      fm.userData.surfaceTopY = 0;
+    }
+    const cm = ceilingMeshRef.current;
+    if (cm) {
+      cm.userData.surfaceType = "ceiling";
+      cm.userData.zone = "indoor";
+    }
+  }, [hideCeiling]);
+
   return (
     <group>
-      <mesh geometry={floorCeilingGeom} material={floorMaterial} receiveShadow name="floor" />
+      <mesh geometry={floorCeilingGeom} material={floorSlabMaterial} receiveShadow name="floor-slab" />
+      <mesh
+        ref={floorMeshRef}
+        geometry={floorFinishGeometry}
+        position={[0, 0.004, 0]}
+        material={floorMaterial}
+        receiveShadow
+        name="floor"
+        renderOrder={1}
+      />
 
       {!hideCeiling &&
         lightPositions.map((pos, idx) => (
@@ -601,7 +791,14 @@ export default function PolygonRoomMesh() {
         ))}
 
       {!hideCeiling && (
-        <mesh geometry={ceilingGeom} material={ceilingMaterial} castShadow receiveShadow name="ceiling" />
+        <mesh
+          ref={ceilingMeshRef}
+          geometry={ceilingGeom}
+          material={ceilingMaterial}
+          castShadow
+          receiveShadow
+          name="ceiling"
+        />
       )}
 
       {Array.from({ length: n }, (_, i) => {
@@ -616,20 +813,31 @@ export default function PolygonRoomMesh() {
             bx={b.x}
             bz={b.z}
             height={h}
-            wallMaterial={wallMaterial}
+            wallMaterial={wallMatPerEdge.get(i)!}
             openingsDigest={openingsDigest}
             room={room}
             edgeIndex={i}
             openings={openings}
+            kitchenWall={kitchenWallTag}
           />
         );
       })}
 
-      {openings.map((o) => {
-        if (o.edgeIndex === undefined) return null;
-        const edge = outlineNormalAtEdge(outline, o.edgeIndex);
-        return <PolygonOpeningMeshes key={`o-${o.id}`} opening={o} edge={edge} />;
-      })}
+      {(() => {
+        const firstWindowId = openings.find((o: Opening) => o.type === "window")?.id;
+        return openings.map((o: Opening) => {
+          if (o.edgeIndex === undefined) return null;
+          const edge = outlineNormalAtEdge(outline, o.edgeIndex);
+          return (
+            <PolygonOpeningMeshes
+              key={`o-${o.id}`}
+              opening={o}
+              edge={edge}
+              showBackdrop={o.id === firstWindowId}
+            />
+          );
+        });
+      })()}
     </group>
   );
 }

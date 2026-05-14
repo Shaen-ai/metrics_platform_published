@@ -16,6 +16,7 @@ import {
   BASE_HEIGHT,
   WALL_CABINET_HEIGHT,
   PANEL_THICKNESS,
+  effectiveKitchenDoorLeafCount,
 } from "../kitchen/data";
 import type { Panel } from "./panelPacker";
 
@@ -121,20 +122,33 @@ function addModulePanels(
     });
   }
   // Sink/oven/dishwasher cut-out units typically have no door — skip door for those.
-  if (
-    m.type !== "sink-unit" &&
-    m.type !== "oven-unit" &&
-    m.type !== "dishwasher-unit"
-  ) {
-    out.push({
-      id: `${prefix}.${m.id}.door`,
-      role: "cabinet-door",
-      label: `${m.type} door`,
-      materialId: doorMatId,
-      widthCm: Math.max(1, W - DOOR_GAP_CM * 2),
-      heightCm: Math.max(1, H - DOOR_GAP_CM * 2),
-      grainAlongWidth: false,
-    });
+  // Open modules have no door fronts for laminate costing.
+  const skipDoor =
+    m.type === "sink-unit" ||
+    m.type === "oven-unit" ||
+    m.type === "dishwasher-unit" ||
+    m.type === "wall-open" ||
+    m.type === "base-open";
+
+  if (!skipDoor) {
+    const innerW = Math.max(1, W - 2 * T);
+    const innerH = Math.max(1, H - DOOR_GAP_CM * 2);
+    const n = effectiveKitchenDoorLeafCount(m);
+    const between = DOOR_GAP_CM;
+    const outerInset = DOOR_GAP_CM * 2;
+    const totalBetween = n > 1 ? between * (n - 1) : 0;
+    const leafW = Math.max(1, (innerW - outerInset - totalBetween) / n);
+    for (let i = 0; i < n; i++) {
+      out.push({
+        id: `${prefix}.${m.id}.door.${i}`,
+        role: "cabinet-door",
+        label: n > 1 ? `${m.type} door (${i + 1}/${n})` : `${m.type} door`,
+        materialId: doorMatId,
+        widthCm: leafW,
+        heightCm: innerH,
+        grainAlongWidth: false,
+      });
+    }
   }
 }
 

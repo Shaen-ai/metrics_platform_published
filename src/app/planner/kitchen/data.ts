@@ -5,7 +5,9 @@ import type {
   CountertopMaterial,
   CountertopConfig,
   KitchenConfig,
+  KitchenDoorPreset,
   KitchenModule,
+  KitchenModuleType,
   DesignRefKind,
   IslandConfig,
   CornerUnitConfig,
@@ -66,6 +68,21 @@ export const BASE_MODULE_CATALOG: ModuleDef[] = [
     minDepthCm: 50,
     maxDepthCm: 70,
     price: 120,
+  },
+  {
+    type: "base-open",
+    name: "Open Base Shelf",
+    description: "Floor cabinet open front — no door",
+    defaultWidth: 60,
+    defaultHeightCm: BASE_HEIGHT,
+    defaultDepthCm: BASE_DEPTH,
+    minWidth: 30,
+    maxWidth: 120,
+    minHeightCm: 60,
+    maxHeightCm: 95,
+    minDepthCm: 50,
+    maxDepthCm: 70,
+    price: 85,
   },
   {
     type: "drawer-unit",
@@ -281,6 +298,8 @@ export interface KitchenModulePresetBase {
   /** Initial width in cm (clamped to catalog limits). */
   defaultWidth?: number;
   description?: string;
+  /** Procedural fronts only; presets like “glass doors” set this so 3D shows a framed inset. */
+  doorPreset?: KitchenDoorPreset;
 }
 
 export interface KitchenModulePresetWall {
@@ -289,6 +308,7 @@ export interface KitchenModulePresetWall {
   type: WallModuleType;
   defaultWidth?: number;
   description?: string;
+  doorPreset?: KitchenDoorPreset;
 }
 
 export const KITCHEN_BASE_MODULE_PRESETS: KitchenModulePresetBase[] = [
@@ -303,16 +323,16 @@ export const KITCHEN_BASE_MODULE_PRESETS: KitchenModulePresetBase[] = [
   { id: "base-door", label: "With door", type: "base-cabinet", description: "Standard door base" },
   { id: "base-drawers", label: "With drawers", type: "drawer-unit", description: "Drawer stack base" },
   { id: "base-door-drawer", label: "With door & drawer", type: "drawer-unit", defaultWidth: 80, description: "Door and drawer combination" },
-  { id: "base-glass", label: "With glass doors", type: "base-cabinet", description: "Glass-front base (size doors to taste)" },
+  { id: "base-glass", label: "With glass doors", type: "base-cabinet", description: "Glass-front base (size doors to taste)", doorPreset: "glassInset" },
   { id: "base-pullout", label: "With pull-out", type: "drawer-unit", description: "Pull-out interior" },
   { id: "base-wire", label: "With wire basket", type: "base-cabinet", description: "Wire basket storage" },
-  { id: "base-open", label: "Open cabinets", type: "base-cabinet", description: "Open base / shelf style" },
+  { id: "base-open", label: "Open cabinets", type: "base-open", description: "Open base / shelf style" },
 ];
 
 export const KITCHEN_WALL_MODULE_PRESETS: KitchenModulePresetWall[] = [
   { id: "wall-corner", label: "For corner", type: "wall-corner", description: "Corner wall unit" },
   { id: "wall-door", label: "With door", type: "wall-cabinet", description: "Wall cabinet with doors" },
-  { id: "wall-glass", label: "With glass doors", type: "wall-cabinet", description: "Glass-front wall cabinet" },
+  { id: "wall-glass", label: "With glass doors", type: "wall-cabinet", description: "Glass-front wall cabinet", doorPreset: "glassInset" },
   { id: "wall-horizontal", label: "Horizontal cabinets", type: "wall-cabinet", defaultWidth: 80, description: "Wide horizontal wall run" },
   { id: "wall-drawers", label: "With drawers", type: "wall-cabinet", description: "Wall unit with drawers" },
   { id: "wall-hood", label: "For extractor hood", type: "hood-unit", description: "Extractor hood space" },
@@ -330,7 +350,7 @@ export const KITCHEN_HIGH_MODULE_PRESETS: KitchenModulePresetBase[] = [
   { id: "high-oven-mw", label: "For oven & microwave oven", type: "oven-unit", description: "Stacked oven and microwave" },
   { id: "high-door-drawer", label: "With door & drawer", type: "tall-unit", description: "Tall with door and drawers" },
   { id: "high-door", label: "With door", type: "tall-unit", description: "Full-height door cabinet" },
-  { id: "high-glass", label: "With glass doors", type: "tall-unit", description: "Tall with glass fronts" },
+  { id: "high-glass", label: "With glass doors", type: "tall-unit", description: "Tall with glass fronts", doorPreset: "glassInset" },
   { id: "high-wire", label: "With wire basket", type: "tall-unit", description: "Pull-out wire baskets" },
   { id: "high-cleaning", label: "With cleaning interior", type: "tall-unit", description: "Broom / cleaning storage" },
   { id: "high-fridge", label: "For fridge & freezer", type: "fridge-unit", description: "Built-in fridge / freezer" },
@@ -630,9 +650,64 @@ export function inferKitchenBaseTypeFromName(name: string): BaseModuleType {
   if (n.includes("dishwasher")) return "dishwasher-unit";
   if (n.includes("fridge") || n.includes("refrigerator")) return "fridge-unit";
   if (n.includes("washing")) return "washing-machine-unit";
+  if (n.includes("open")) return "base-open";
   if (n.includes("corner")) return "corner-base";
   if (n.includes("tall") || n.includes("pantry") || n.includes("larder")) return "tall-unit";
   return "base-cabinet";
+}
+
+/** True when `t` is one of the floor-level catalog module types. */
+export function isFloorKitchenModuleType(t: KitchenModuleType): boolean {
+  return BASE_MODULE_CATALOG.some((d) => d.type === t);
+}
+
+/** True when `t` is one of the wall-mounted catalog module types. */
+export function isWallKitchenModuleType(t: KitchenModuleType): boolean {
+  return WALL_MODULE_CATALOG.some((d) => d.type === t);
+}
+
+/**
+ * Resolve kitchen catalog type from a planner/API module row.
+ * Uses explicit `kitchenModuleType` when it matches `placementType`; otherwise infers from name.
+ */
+export function resolveKitchenModuleTypeFromPlannerModule(input: {
+  placementType: "floor" | "wall";
+  kitchenModuleType?: KitchenModuleType;
+  name: string;
+}): KitchenModuleType {
+  const ex = input.kitchenModuleType;
+  if (
+    ex &&
+    input.placementType === "floor" &&
+    isFloorKitchenModuleType(ex)
+  ) {
+    return ex;
+  }
+  if (
+    ex &&
+    input.placementType === "wall" &&
+    isWallKitchenModuleType(ex)
+  ) {
+    return ex;
+  }
+  return input.placementType === "floor"
+    ? inferKitchenBaseTypeFromName(input.name)
+    : inferKitchenWallTypeFromName(input.name);
+}
+
+/** Multi-door split applies only to standard closed cabinets (procedural fronts). */
+export function kitchenModuleSupportsDoorLeaves(type: KitchenModuleType): boolean {
+  return type === "base-cabinet" || type === "wall-cabinet";
+}
+
+const MAX_DOOR_LEAVES = 6;
+
+/** Effective leaf count for procedural fronts (1–6); 1 when unsupported or unset. */
+export function effectiveKitchenDoorLeafCount(m: KitchenModule): number {
+  if (!kitchenModuleSupportsDoorLeaves(m.type)) return 1;
+  const n = m.doorLeafCount;
+  if (n === undefined || !Number.isFinite(n)) return 1;
+  return Math.min(MAX_DOOR_LEAVES, Math.max(1, Math.round(n)));
 }
 
 export function inferKitchenWallTypeFromName(name: string): WallModuleType {
@@ -659,6 +734,40 @@ export function getMaterial(id: string, extra?: KitchenMaterial[]): KitchenMater
   return NEUTRAL_KITCHEN_MATERIAL;
 }
 
+/** Drops per-module material overrides whose ids disappeared from the current catalog. */
+function clampKitchenModuleMaterialFields(
+  m: KitchenModule,
+  cabinetMaterials: KitchenMaterial[],
+  doorMaterials: KitchenMaterial[],
+): KitchenModule {
+  const next = { ...m };
+  if (
+    next.cabinetMaterialId &&
+    cabinetMaterials.length > 0 &&
+    !cabinetMaterials.some((x) => x.id === next.cabinetMaterialId)
+  ) {
+    delete next.cabinetMaterialId;
+  }
+  if (
+    next.doorMaterialId &&
+    doorMaterials.length > 0 &&
+    !doorMaterials.some((x) => x.id === next.doorMaterialId)
+  ) {
+    delete next.doorMaterialId;
+  }
+  return next;
+}
+
+function clampKitchenModulesList(
+  modules: KitchenModule[],
+  cabinetMaterials: KitchenMaterial[],
+  doorMaterials: KitchenMaterial[],
+): KitchenModule[] {
+  return modules.map((m) =>
+    clampKitchenModuleMaterialFields(m, cabinetMaterials, doorMaterials),
+  );
+}
+
 /** If config references a material id not in the current admin lists, snap to the first entry. */
 export function clampConfigMaterialsToAvailable(
   config: KitchenConfig,
@@ -674,6 +783,38 @@ export function clampConfigMaterialsToAvailable(
   if (doorMaterials.length > 0 && !doorMaterials.some((m) => m.id === config.doors.material)) {
     next = { ...next, doors: { ...next.doors, material: doorMaterials[0]!.id } };
   }
+
+  next = {
+    ...next,
+    baseModules: clampKitchenModulesList(next.baseModules, cabinetMaterials, doorMaterials),
+    wallModules: clampKitchenModulesList(next.wallModules, cabinetMaterials, doorMaterials),
+    island: {
+      ...next.island,
+      baseModules: clampKitchenModulesList(
+        next.island.baseModules,
+        cabinetMaterials,
+        doorMaterials,
+      ),
+      wallModules: clampKitchenModulesList(
+        next.island.wallModules,
+        cabinetMaterials,
+        doorMaterials,
+      ),
+    },
+    leftWall: {
+      ...next.leftWall,
+      baseModules: clampKitchenModulesList(
+        next.leftWall.baseModules,
+        cabinetMaterials,
+        doorMaterials,
+      ),
+      wallModules: clampKitchenModulesList(
+        next.leftWall.wallModules,
+        cabinetMaterials,
+        doorMaterials,
+      ),
+    },
+  };
   if (worktopMaterials && worktopMaterials.length > 0) {
     const id = next.countertop.adminMaterialId;
     if (!id || !worktopMaterials.some((m) => m.id === id)) {

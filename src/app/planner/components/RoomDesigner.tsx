@@ -68,6 +68,7 @@ const ROOM_STYLE_PRESETS: { label: string; tags: string[] }[] = [
 
 export default function RoomDesigner() {
   const plannerConfig = usePlannerType();
+  const isOutdoor = plannerConfig?.id === "outdoor";
   const showRoomDesigner = usePlannerStore((s) => s.showRoomDesigner);
   const setShowRoomDesigner = usePlannerStore((s) => s.setShowRoomDesigner);
   const room = usePlannerStore((s) => s.room);
@@ -246,9 +247,13 @@ export default function RoomDesigner() {
       <div className="pointer-events-auto flex h-full w-[min(100%,22rem)] max-w-[22rem] flex-col border-l border-[#F0E6D8] bg-white shadow-[-8px_0_24px_rgba(0,0,0,0.08)] sm:w-[min(100%,26rem)] sm:max-w-[26rem]">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#F0E6D8] px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold leading-tight">Room Designer</h2>
+            <h2 className="text-lg font-semibold leading-tight">
+              {isOutdoor ? "Outdoor space" : "Room Designer"}
+            </h2>
             <p className="mt-0.5 text-[11px] leading-snug text-[#6B7280] sm:text-xs">
-              3D view stays visible; edits apply live.
+              {isOutdoor
+                ? "Adjust your patio or deck footprint; the 3D view stays open."
+                : "3D view stays visible; edits apply live."}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -272,7 +277,9 @@ export default function RoomDesigner() {
               aria-expanded={templatesSectionOpen}
               className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-[#FEF3E7]"
             >
-              <span className="text-sm font-semibold text-[#1A1A1A]">Room Templates</span>
+              <span className="text-sm font-semibold text-[#1A1A1A]">
+                {isOutdoor ? "Deck & patio presets" : "Room Templates"}
+              </span>
               <ChevronDown
                 className={`h-4 w-4 shrink-0 text-[#6B7280] transition-transform ${
                   templatesSectionOpen ? "rotate-180" : ""
@@ -307,10 +314,19 @@ export default function RoomDesigner() {
           </section>
 
           <section className="mb-6">
-            <h3 className="mb-2 text-sm font-semibold">Room style</h3>
+            <h3 className="mb-2 text-sm font-semibold">{isOutdoor ? "Outdoor look" : "Room style"}</h3>
             <p className="mb-2 text-[11px] leading-relaxed text-[#6B7280]">
-              Labels are saved with your planner session. Choosing a <strong>room template</strong> above replaces
-              the whole room and clears these tags.
+              {isOutdoor ? (
+                <>
+                  Labels are saved with your planner session. Pick a <strong>preset</strong> above to swap
+                  dimensions and decking tone quickly.
+                </>
+              ) : (
+                <>
+                  Labels are saved with your planner session. Choosing a <strong>room template</strong>{" "}
+                  above replaces the whole room and clears these tags.
+                </>
+              )}
             </p>
             {room.roomStyleTags && room.roomStyleTags.length > 0 ? (
               <div className="mb-2 flex flex-wrap gap-1">
@@ -350,10 +366,21 @@ export default function RoomDesigner() {
           </section>
 
           <section className="mb-6">
-            <h3 className="mb-2 text-sm font-semibold">Room Dimensions</h3>
+            <h3 className="mb-2 text-sm font-semibold">
+              {isOutdoor ? "Patio size" : "Room Dimensions"}
+            </h3>
             <p className="mb-3 text-xs leading-relaxed text-[#6B7280]">
-              <strong>A–D</strong> on the floor match this panel: A back-left, B back-right, C front-right,
-              D front-left. Distances follow those corners and update if the room size changes.
+              {isOutdoor ? (
+                <>
+                  <strong>A–D</strong> on the deck mark the corners of your outdoor footprint. Width and depth set
+                  how much space you have for furniture.
+                </>
+              ) : (
+                <>
+                  <strong>A–D</strong> on the floor match this panel: A back-left, B back-right, C front-right,
+                  D front-left. Distances follow those corners and update if the room size changes.
+                </>
+              )}
             </p>
             <div className="grid grid-cols-1 gap-3">
               <div>
@@ -367,7 +394,6 @@ export default function RoomDesigner() {
                   minM={ROOM_PLAN_MIN_M}
                   maxM={ROOM_PLAN_MAX_M}
                   onCommit={setRoomWidthClamped}
-                  onLiveChange={setRoomWidthClamped}
                 />
               </div>
               <div>
@@ -381,9 +407,9 @@ export default function RoomDesigner() {
                   minM={ROOM_PLAN_MIN_M}
                   maxM={ROOM_PLAN_MAX_M}
                   onCommit={setRoomDepthClamped}
-                  onLiveChange={setRoomDepthClamped}
                 />
               </div>
+              {!isOutdoor && (
               <div>
                 <label className="block text-sm font-medium mb-2">{anchorHeightLabel}</label>
                 {slopedCeilingUi && (
@@ -400,12 +426,13 @@ export default function RoomDesigner() {
                   minM={ROOM_HEIGHT_MIN_M}
                   maxM={ROOM_HEIGHT_MAX_M}
                   onCommit={applyRoomHeight}
-                  onLiveChange={applyRoomHeight}
                 />
               </div>
+              )}
             </div>
           </section>
 
+          {!isOutdoor && (
           <section className="mb-6">
             <h3 className="mb-2 text-sm font-semibold">Ceiling slope</h3>
             <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm">
@@ -494,7 +521,6 @@ export default function RoomDesigner() {
                         minM={ROOM_HEIGHT_MIN_M}
                         maxM={ROOM_HEIGHT_MAX_M}
                         onCommit={(m) => applySlopedTripleSlot(slot, m)}
-                        onLiveChange={(m) => applySlopedTripleSlot(slot, m)}
                       />
                     </div>
                   ))}
@@ -508,7 +534,9 @@ export default function RoomDesigner() {
               </>
             )}
           </section>
+          )}
 
+          {!isOutdoor && (
           <section className="mb-6">
             <div className="mb-3 flex flex-col gap-2">
               <h3 className="text-sm font-semibold">Beams</h3>
@@ -957,7 +985,9 @@ export default function RoomDesigner() {
               <p className="text-sm text-[#9CA3AF]">No beams yet.</p>
             )}
           </section>
+          )}
 
+          {!isOutdoor && (
           <section>
             <div className="mb-3 flex flex-col gap-3">
               <h3 className="text-sm font-semibold">Doors & Windows</h3>
@@ -1310,6 +1340,51 @@ export default function RoomDesigner() {
                             />
                           </div>
 
+                          {opening.type === "door" && (
+                            <div className="space-y-2 pt-1 border-t border-[#F0E6D8]">
+                              <div>
+                                <label className="block text-sm font-medium mb-1">
+                                  Door finish texture URL (optional)
+                                </label>
+                                <input
+                                  type="url"
+                                  className="w-full px-3 py-2 border border-[#F0E6D8] rounded-xl text-sm"
+                                  placeholder="https://…"
+                                  value={opening.doorTextureUrl ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value.trim();
+                                    const updated = room.openings?.map((o) =>
+                                      o.id === opening.id
+                                        ? { ...o, doorTextureUrl: v || undefined }
+                                        : o
+                                    );
+                                    setRoom({ ...room, openings: updated });
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium mb-1">
+                                  Door model GLB URL (optional)
+                                </label>
+                                <input
+                                  type="url"
+                                  className="w-full px-3 py-2 border border-[#F0E6D8] rounded-xl text-sm"
+                                  placeholder="https://….glb"
+                                  value={opening.doorModelUrl ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value.trim();
+                                    const updated = room.openings?.map((o) =>
+                                      o.id === opening.id
+                                        ? { ...o, doorModelUrl: v || undefined }
+                                        : o
+                                    );
+                                    setRoom({ ...room, openings: updated });
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
                           <div>
                             <button
                               type="button"
@@ -1419,6 +1494,7 @@ export default function RoomDesigner() {
               </p>
             )}
           </section>
+          )}
 
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button

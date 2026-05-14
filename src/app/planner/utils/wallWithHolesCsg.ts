@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
 import { ceilingYAtWall } from "./roomCeiling";
-import { createWallPrismGeometry, type WallName } from "./wallPrism";
+import { applyPlanarSurfaceUvs, createWallPrismGeometry, type WallName } from "./wallPrism";
 import type { Room } from "../types";
 
 const csgEvaluator = new Evaluator();
@@ -136,6 +136,7 @@ export function createWallPrismWithHoles(
     return baseGeom;
   }
 
+  baseGeom.deleteAttribute("uv");
   let wallBrush = new Brush(baseGeom);
   wallBrush.updateMatrixWorld();
 
@@ -147,5 +148,5 @@ export function createWallPrismWithHoles(
     wallBrush = next;
   }
 
-  return wallBrush.geometry;
+  return applyPlanarSurfaceUvs(wallBrush.geometry);
 }

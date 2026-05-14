@@ -1,6 +1,6 @@
 import { formatPrice as formatPriceLib } from "@/lib/utils";
 import { Room } from "../types";
-import { getVerticalWallBeamFloorObstacles } from "./beams";
+import { getWallBeamFloorObstacles } from "./beams";
 import { pointInFloorOutline, roomUsesFloorOutline } from "./floorOutline";
 
 /** Clamp value between min and max */
@@ -98,7 +98,8 @@ function resolveFootprintFromObstacle(
   z: number,
   halfW: number,
   halfD: number,
-  obs: { minX: number; maxX: number; minZ: number; maxZ: number }
+  obs: { minX: number; maxX: number; minZ: number; maxZ: number; preferredPushAxis?: "x" | "z" },
+  room: Room,
 ): { x: number; z: number } {
   const ix0 = x - halfW;
   const ix1 = x + halfW;
@@ -110,12 +111,64 @@ function resolveFootprintFromObstacle(
 
   const cx = (obs.minX + obs.maxX) / 2;
   const cz = (obs.minZ + obs.maxZ) / 2;
-  if (ox < oz) {
-    const push = ox + OBSTACLE_EPS;
-    return x < cx ? { x: x - push, z } : { x: x + push, z };
+  const halfObsX = (obs.maxX - obs.minX) / 2;
+  const halfObsZ = (obs.maxZ - obs.minZ) / 2;
+
+  /** Distance the item center must move along an axis to fully clear the obstacle. */
+  const clearLeft = x - (cx - halfObsX - halfW - OBSTACLE_EPS);
+  const clearRight = (cx + halfObsX + halfW + OBSTACLE_EPS) - x;
+  const clearFront = z - (cz - halfObsZ - halfD - OBSTACLE_EPS);
+  const clearBack = (cz + halfObsZ + halfD + OBSTACLE_EPS) - z;
+
+  const minX = Math.min(clearLeft, clearRight);
+  const minZ = Math.min(clearFront, clearBack);
+
+  const roomMinX = -room.width / 2 + halfW;
+  const roomMaxX = room.width / 2 - halfW;
+  const roomMinZ = -room.depth / 2 + halfD;
+  const roomMaxZ = room.depth / 2 - halfD;
+  const canFitX = roomMinX <= roomMaxX;
+  const canFitZ = roomMinZ <= roomMaxZ;
+
+  const candidates = [
+    {
+      axis: "x" as const,
+      move: clearLeft,
+      pos: { x: x - clearLeft, z },
+      fits: !canFitX || x - clearLeft >= roomMinX,
+    },
+    {
+      axis: "x" as const,
+      move: clearRight,
+      pos: { x: x + clearRight, z },
+      fits: !canFitX || x + clearRight <= roomMaxX,
+    },
+    {
+      axis: "z" as const,
+      move: clearFront,
+      pos: { x, z: z - clearFront },
+      fits: !canFitZ || z - clearFront >= roomMinZ,
+    },
+    {
+      axis: "z" as const,
+      move: clearBack,
+      pos: { x, z: z + clearBack },
+      fits: !canFitZ || z + clearBack <= roomMaxZ,
+    },
+  ];
+
+  const best = (axis?: "x" | "z") =>
+    candidates
+      .filter((c) => c.fits && (!axis || c.axis === axis))
+      .sort((a, b) => a.move - b.move)[0]?.pos;
+
+  if (obs.preferredPushAxis) {
+    const preferred = best(obs.preferredPushAxis);
+    if (preferred) return preferred;
   }
-  const push = oz + OBSTACLE_EPS;
-  return z < cz ? { x, z: z - push } : { x, z: z + push };
+  return best(minX < minZ ? "x" : "z") ?? best() ?? (minX < minZ
+    ? candidates[clearLeft < clearRight ? 0 : 1]!.pos
+    : candidates[clearFront < clearBack ? 2 : 3]!.pos);
 }
 
 /**
@@ -128,10 +181,16 @@ export function clampFurnitureToRoom(
   itemWidth: number,
   itemDepth: number,
   rotationY: number,
-  room: Room
+  room: Room,
+  itemHeight?: number,
+  itemBottomY = 0,
 ): { x: number; z: number } {
   let { x: cx, z: cz } = clampToRoom(x, z, itemWidth, itemDepth, rotationY, room);
-  const obstacles = getVerticalWallBeamFloorObstacles(room);
+  const obstacles = getWallBeamFloorObstacles(
+    room,
+    itemBottomY,
+    itemHeight != null ? itemBottomY + itemHeight : Infinity,
+  );
   if (!obstacles.length) return { x: cx, z: cz };
 
   const cos = Math.abs(Math.cos(rotationY));
@@ -142,7 +201,7 @@ export function clampFurnitureToRoom(
   for (let iter = 0; iter < 10; iter++) {
     let changed = false;
     for (const obs of obstacles) {
-      const next = resolveFootprintFromObstacle(cx, cz, halfW, halfD, obs);
+      const next = resolveFootprintFromObstacle(cx, cz, halfW, halfD, obs, room);
       if (next.x !== cx || next.z !== cz) {
         cx = next.x;
         cz = next.z;

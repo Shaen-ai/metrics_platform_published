@@ -20,9 +20,14 @@ import {
   handleMaterialsFromStore as wardrobeHandleMaterialsFromStore,
   withDefaultWardrobeDoorFinishes,
 } from "@/app/planner/wardrobe/data";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, toRelativeStorageUrl } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { filterMaterialsForPlanner } from "@/lib/plannerMaterials";
+import {
+  filterMaterialsForPlanner,
+  isBoardFinishMaterial,
+  isWardrobeBoardFinishMaterial,
+  mergeDefaultBoardMaterialsWhenMissing,
+} from "@/lib/plannerMaterials";
 import {
   ArrowLeft,
   ShoppingCart,
@@ -45,17 +50,29 @@ function describeCartForPaypal(cart: CartLine[]): string {
 
 function buildOrderPayload(cart: CartLine[], admin: Admin | null) {
   const { materials } = useStore.getState();
-  const plannerMaterials = filterMaterialsForPlanner(materials, admin?.plannerMaterialIds);
-  const cabinetMats = materialsFromStore(plannerMaterials, admin?.companyName);
-  const worktops = worktopMaterialsFromStore(plannerMaterials, admin?.companyName);
-  const kitchenHandles = kitchenHandleMaterialsFromStore(plannerMaterials, admin?.companyName);
-  const palette = cabinetMats.length > 0 ? cabinetMats : [NEUTRAL_KITCHEN_MATERIAL];
-  const wardrobeFrames = wardrobeMaterialsFromStore(plannerMaterials, admin?.companyName);
-  const wardrobeDoorFronts = withDefaultWardrobeDoorFinishes(
-    doorFrontMaterialsFromStore(plannerMaterials, admin?.companyName),
+  const filtered = filterMaterialsForPlanner(materials, admin?.plannerMaterialIds);
+  const kitchenMerged = mergeDefaultBoardMaterialsWhenMissing(
+    filtered,
+    admin?.id,
+    isBoardFinishMaterial,
+    admin?.plannerMaterialIds,
   );
-  const wardrobeSlides = slidingMechanismsFromStore(plannerMaterials, admin?.companyName);
-  const wardrobeHandles = wardrobeHandleMaterialsFromStore(plannerMaterials, admin?.companyName);
+  const wardrobeMerged = mergeDefaultBoardMaterialsWhenMissing(
+    filtered,
+    admin?.id,
+    isWardrobeBoardFinishMaterial,
+    admin?.plannerMaterialIds,
+  );
+  const cabinetMats = materialsFromStore(kitchenMerged, admin?.companyName);
+  const worktops = worktopMaterialsFromStore(kitchenMerged, admin?.companyName);
+  const kitchenHandles = kitchenHandleMaterialsFromStore(kitchenMerged, admin?.companyName);
+  const palette = cabinetMats.length > 0 ? cabinetMats : [NEUTRAL_KITCHEN_MATERIAL];
+  const wardrobeFrames = wardrobeMaterialsFromStore(wardrobeMerged, admin?.companyName);
+  const wardrobeDoorFronts = withDefaultWardrobeDoorFinishes(
+    doorFrontMaterialsFromStore(wardrobeMerged, admin?.companyName),
+  );
+  const wardrobeSlides = slidingMechanismsFromStore(wardrobeMerged, admin?.companyName);
+  const wardrobeHandles = wardrobeHandleMaterialsFromStore(wardrobeMerged, admin?.companyName);
 
   const hasCustom = cart.some(
     (c) =>
@@ -190,7 +207,7 @@ export default function CheckoutPage() {
     try {
       const order = await submitOrderPayload();
       clearCart();
-      router.push(`/checkout/success?order_id=${order.id}`);
+      router.push(`/checkout/success?order_id=${encodeURIComponent(order.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create order");
       setSubmitting(false);
@@ -216,7 +233,7 @@ export default function CheckoutPage() {
         item_name: itemName,
         amount: total.toFixed(2),
         currency_code: currency,
-        return: `${publishedSiteUrl}/checkout/success?order_id=${order.id}`,
+        return: `${publishedSiteUrl}/checkout/success?order_id=${encodeURIComponent(order.id)}&paid=1`,
         cancel_return: `${publishedSiteUrl}/checkout/cancel`,
         notify_url: `${publicApiUrl}/paypal/ipn`,
         custom: order.id,
@@ -225,7 +242,7 @@ export default function CheckoutPage() {
       });
 
       clearCart();
-      window.location.href = `https://www.sandbox.paypal.com/cgi-bin/webscr?${paypalParams.toString()}`;
+      window.location.assign(`https://www.sandbox.paypal.com/cgi-bin/webscr?${paypalParams.toString()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create order");
       setSubmitting(false);
@@ -331,11 +348,12 @@ export default function CheckoutPage() {
                 {cart.map((line) => {
                   if (line.kind === "catalog") {
                     const { item, quantity, lineId } = line;
+                    const imageSrc = toRelativeStorageUrl(item.images[0]);
                     return (
                       <div key={lineId} className="flex gap-4 items-center">
                         <div className="w-16 h-16 rounded-xl bg-[var(--muted)] overflow-hidden relative shrink-0">
-                          {item.images[0] ? (
-                            <Image src={item.images[0]} alt={item.name} fill className="object-cover" />
+                          {imageSrc ? (
+                            <Image src={imageSrc} alt={item.name} fill className="object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
                               <Package className="w-6 h-6 text-[var(--muted-foreground)] opacity-40" />

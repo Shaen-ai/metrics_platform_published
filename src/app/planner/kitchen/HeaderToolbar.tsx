@@ -14,9 +14,10 @@ import {
 } from "lucide-react";
 import { useKitchenStore } from "./store";
 import { calculatePrice } from "./data";
-import { useStore } from "@/lib/store";
 import { useResolvedAdmin } from "@/contexts/PublishedTenantProvider";
 import { formatPrice } from "@/lib/utils";
+import SendPlannerDesignToAdminDialog from "../components/SendPlannerDesignToAdminDialog";
+import { buildKitchenEmailDesign } from "../utils/plannerDesignSnapshots";
 
 export default function KitchenHeaderToolbar() {
   const admin = useResolvedAdmin();
@@ -62,7 +63,7 @@ export default function KitchenHeaderToolbar() {
             className="header-icon-btn"
             onClick={undo}
             disabled={!canUndo}
-            title="Undo (⌘Z / Ctrl+Z)"
+            title="Undo"
           >
             <Undo2 size={16} />
           </button>
@@ -70,7 +71,7 @@ export default function KitchenHeaderToolbar() {
             className="header-icon-btn"
             onClick={redo}
             disabled={!canRedo}
-            title="Redo (⌘⇧Z / Ctrl+Shift+Z or Ctrl+Y)"
+            title="Redo"
           >
             <Redo2 size={16} />
           </button>
@@ -90,6 +91,17 @@ export default function KitchenHeaderToolbar() {
           >
             <Download size={16} />
           </button>
+          <SendPlannerDesignToAdminDialog
+            adminSlug={admin?.slug}
+            plannerType="kitchen-design"
+            plannerLabel="Kitchen Designer"
+            buildDesign={() =>
+              buildKitchenEmailDesign({
+                config: structuredClone(config),
+                price,
+              })
+            }
+          />
         </div>
         <button
           className="header-icon-btn"

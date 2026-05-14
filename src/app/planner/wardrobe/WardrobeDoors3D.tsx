@@ -18,6 +18,7 @@ import {
   clampWardrobeBase,
   DEFAULT_WARDROBE_BASE,
   wardrobePlinthFrontDropCm,
+  wardrobeHingedDoorFlatBaseIndex,
   type WardrobeMaterial,
 } from "./data";
 import { useHandleTexture } from "../useHandleTexture";
@@ -28,6 +29,7 @@ import {
 } from "../sheet/useWardrobePanelPlacements";
 import { planarMaterialForPanel } from "../sheet/renderHelpers";
 import { hingedDoorPanelVerticalCm } from "../sheet/wardrobePanels";
+import { useWardrobeRenderedConfig } from "./wardrobeEffectiveConfig";
 import type { GrainDirection, HandleStyle, WardrobeSection } from "./types";
 
 const CM = 0.01;
@@ -352,8 +354,7 @@ function SlidingDoorPanelRow({
 
 export default function WardrobeDoors3D() {
   const embed = useContext(WardrobeRoomContext);
-  const storeConfig = useWardrobeStore((s) => s.config);
-  const config = embed?.config ?? storeConfig;
+  const config = useWardrobeRenderedConfig();
   const frame = config.frame;
   const sections = config.sections;
   const doors = config.doors;
@@ -436,8 +437,7 @@ export default function WardrobeDoors3D() {
           const dh = dhCm * CM;
           const doorY = doorCenterYCm * CM;
           const handleYOffset = refDoorY - doorY;
-          const matId =
-            panelMatIds[idx] ?? panelMatIds[0] ?? INTERNAL_RENDER_FALLBACK.id;
+          const flatBase = wardrobeHingedDoorFlatBaseIndex(sections, idx);
           const zStagger =
             sections.length > 1 ? (idx % 2 === 0 ? 1 : -1) * HINGED_DOOR_Z_STAGGER_M : 0;
 
@@ -448,6 +448,9 @@ export default function WardrobeDoors3D() {
           return (
             <group key={section.id}>
               {layout.doorCenterOffsetsCm.map((offsetCm, doorIdx) => {
+                const panelFlat = flatBase + doorIdx;
+                const matId =
+                  panelMatIds[panelFlat] ?? panelMatIds[0] ?? INTERNAL_RENDER_FALLBACK.id;
                 const doorX = bayCenterX + offsetCm * CM;
                 const handleSide =
                   n === 1
@@ -458,7 +461,7 @@ export default function WardrobeDoors3D() {
                     key={`${section.id}.${doorIdx}`}
                     panelId={`door.hinged.${idx}.${doorIdx}`}
                     materialId={matId}
-                    doorGrain={grainForPanel(idx)}
+                    doorGrain={grainForPanel(panelFlat)}
                     refW={refW}
                     refH={refH}
                     dw={dw}

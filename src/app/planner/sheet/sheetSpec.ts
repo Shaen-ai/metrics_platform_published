@@ -82,8 +82,8 @@ export function materialTypeSlugs(m: {
   type: string;
   types?: string[];
 }): string[] {
-  if (m.types?.length) return m.types;
-  return [m.type];
+  const raw = m.types?.length ? m.types : [m.type];
+  return raw.filter((t): t is string => typeof t === "string" && t.trim() !== "");
 }
 
 export function isSheetedMaterialFromTypes(types: string[]): boolean {
