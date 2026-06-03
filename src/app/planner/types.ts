@@ -241,8 +241,8 @@ export interface PlannerPlinthSurfaceFields {
   plinthDepthCm?: number;
   /** Solid color when mode is "color". */
   plinthColor?: string;
-  /** "color" = solid color, "catalog" = catalog product texture. */
-  plinthMaterialMode?: "color" | "catalog";
+  /** "color" = solid color, "catalog" = catalog product texture, "customImage" = user-uploaded texture. */
+  plinthMaterialMode?: "color" | "catalog" | "customImage";
   /** Texture image URL from catalog selection. */
   plinthCustomTextureUrl?: string;
   /** Pricing / BOM metadata captured from catalog selection. */

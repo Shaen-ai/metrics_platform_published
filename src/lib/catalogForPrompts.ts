@@ -22,6 +22,8 @@ export interface CatalogItemSummary {
   currency: string;
   /** First storefront image absolute URL when available */
   primaryImageUrl?: string | null;
+  productFamily?: string | null;
+  productSubtype?: string | null;
 }
 
 const MAX_ROWS_IN_CREATIVE_PROMPT = 96;
@@ -70,6 +72,9 @@ function rawItemToSummary(item: Record<string, unknown>): CatalogItemSummary {
 
   const idVal = item.id !== undefined ? String(item.id).trim() : "";
 
+  const pf = item.productFamily ?? item.product_family;
+  const ps = item.productSubtype ?? item.product_subtype;
+
   return {
     id: idVal,
     name: typeof item.name === "string" && item.name.trim() ? item.name : "Item",
@@ -81,6 +86,8 @@ function rawItemToSummary(item: Record<string, unknown>): CatalogItemSummary {
     price: Number(item.price) || 0,
     currency: typeof item.currency === "string" && item.currency ? item.currency : "AMD",
     primaryImageUrl: absolutizePossibleUrl(primary),
+    productFamily: typeof pf === "string" && pf.trim() ? pf.trim() : null,
+    productSubtype: typeof ps === "string" && ps.trim() ? ps.trim() : null,
   };
 }
 
@@ -339,4 +346,23 @@ export async function fetchCatalogSummary(adminSlug: string): Promise<CatalogIte
     preferredCatalogIds: [],
   });
   return ctx.summariesForDirector;
+}
+
+/**
+ * Coverage instructions when the user explicitly pinned catalog products.
+ * Overrides the merchant percent/count rules to ensure only pinned SKUs appear.
+ */
+export function buildPinsOnlyCoverageInstructions(
+  pinnedSummaries: CatalogItemSummary[],
+): string {
+  if (pinnedSummaries.length === 0) return "";
+
+  const idList = pinnedSummaries.map((s) => `"${s.name}" [${s.id}]`).join(", ");
+  return `
+CATALOG COVERAGE — PINS-ONLY MODE (user selected ${pinnedSummaries.length} specific product(s)):
+The user hand-picked exactly these products: ${idList}.
+"selected_catalog_ids" MUST contain ONLY these ${pinnedSummaries.length} id(s) — do NOT add any other catalog SKU ids.
+In the fullPrompt and arrangement, mention ONLY these products by name. Do NOT introduce other catalog furniture.
+If the room needs more furniture than provided, describe empty/open space — do NOT invent or add unpinned products.
+If the user wants the same product placed multiple times, repeat its name in different positions in the arrangement.`;
 }

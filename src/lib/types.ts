@@ -247,8 +247,6 @@ export interface PublicSiteTheme {
 
 export interface PlanEntitlementsSnapshot {
   planTier: string;
-  trialEndsAt?: string | null;
-  onTrial: boolean;
   aiChatMonthlyLimit: number | null;
   aiChatRemaining: number | null;
   image3dMonthlyLimit: number;

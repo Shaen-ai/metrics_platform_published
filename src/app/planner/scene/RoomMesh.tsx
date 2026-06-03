@@ -1214,8 +1214,14 @@ function RectangularRoomMesh() {
       room.wallUvRepeatX,
       room.wallUvRepeatY,
       room.wallUvRotationDeg,
+      room.wallTextureWidthCm,
+      room.wallTextureHeightCm,
+      room.wallMaterialProductWidthCm,
+      room.wallMaterialProductHeightCm,
       room.wallTileWidthCm,
       room.wallTileHeightCm,
+      room.wallTileGroutCm,
+      room.wallTileGroutColor,
       room.width,
       room.depth,
       room.height,
@@ -1235,8 +1241,14 @@ function RectangularRoomMesh() {
       room.wallUvRepeatX,
       room.wallUvRepeatY,
       room.wallUvRotationDeg,
+      room.wallTextureWidthCm,
+      room.wallTextureHeightCm,
+      room.wallMaterialProductWidthCm,
+      room.wallMaterialProductHeightCm,
       room.wallTileWidthCm,
       room.wallTileHeightCm,
+      room.wallTileGroutCm,
+      room.wallTileGroutColor,
       room.width,
       room.depth,
       room.height,
@@ -1453,7 +1465,7 @@ function RectangularRoomMesh() {
 
   useEffect(() => {
     if (
-      room.plinthMaterialMode !== "catalog" ||
+      (room.plinthMaterialMode !== "catalog" && room.plinthMaterialMode !== "customImage") ||
       !room.plinthCustomTextureUrl
     ) {
       baseboardMaterial.map = null;

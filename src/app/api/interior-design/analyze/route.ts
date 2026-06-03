@@ -3,10 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { buildAnalysisSystemPrompt, type RoomAnalysis } from "@/lib/interiorDesignPrompts";
 import { withRetry } from "@/lib/aiRetry";
 import { PUBLIC_AI_GENERIC_ERROR, PUBLIC_AI_UNAVAILABLE } from "@/lib/tunzoneAi";
+import { optimizeImageBufferForAi } from "@/lib/optimizeImageForAi";
 
-export const maxDuration = 60;
-
-type ImageMediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,11 +30,10 @@ export async function POST(request: NextRequest) {
     const imageBlocks: Anthropic.ImageBlockParam[] = [];
     for (const img of roomImages) {
       const bytes = await img.arrayBuffer();
-      const base64 = Buffer.from(bytes).toString("base64");
-      const mediaType = img.type as ImageMediaType;
+      const optimized = await optimizeImageBufferForAi(Buffer.from(bytes));
       imageBlocks.push({
         type: "image",
-        source: { type: "base64", media_type: mediaType, data: base64 },
+        source: { type: "base64", media_type: "image/jpeg", data: optimized.base64 },
       });
     }
 
@@ -78,10 +76,6 @@ export async function POST(request: NextRequest) {
       console.error("Interior design analyze: failed to parse room analysis payload");
       return NextResponse.json({ error: "Failed to parse room analysis." }, { status: 500 });
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7828/ingest/11550746-5e7b-478f-b28e-9e894272fe85',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6423a9'},body:JSON.stringify({sessionId:'6423a9',location:'analyze/route.ts',message:'Room analysis result',data:{room_shape:analysis.room_shape,window_count:analysis.window_count,window_positions:analysis.window_positions,door_count:analysis.door_count,door_positions:analysis.door_positions,ceiling_type:analysis.ceiling_type,has_staircase:analysis.has_staircase,structural_elements:analysis.structural_elements,camera_angle:analysis.camera_angle,confidence:analysis.confidence},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 
     return NextResponse.json({ data: analysis, adminSlug });
   } catch (error: any) {

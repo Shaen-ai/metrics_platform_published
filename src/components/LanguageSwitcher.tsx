@@ -24,13 +24,13 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
     <div ref={ref} className={`relative ${className}`}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-white px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
+        className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
       >
         <Globe className="w-4 h-4" />
         <span>{current.flag}</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-[var(--border)] bg-white shadow-lg py-1">
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-lg py-1">
           {languages.map((l) => (
             <button
               key={l.code}

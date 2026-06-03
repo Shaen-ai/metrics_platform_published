@@ -9,8 +9,16 @@ import PhotoUploader from "./components/PhotoUploader";
 import ClarificationForm from "./components/ClarificationForm";
 import ResultGallery from "./components/ResultGallery";
 import DesignChat from "./components/DesignChat";
+import CatalogProductPicker from "./components/CatalogProductPicker";
 import { normalizeRoomAnalysisOpenings } from "@/lib/interiorDesignPrompts";
 import "./interior-design.css";
+
+function base64ToBlob(b64: string, mime: string): Blob {
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
 
 const PHASE_LABELS: Record<string, string> = {
   uploading: "Uploading photo...",
@@ -49,10 +57,10 @@ export default function InteriorDesignLayout() {
     setCurrentPrompt,
     resetSession,
     preferredCatalogIdsForAi,
-    setPreferredCatalogIdsForAi,
   } = useInteriorDesignStore();
 
-  const busy = phase !== "idle" && phase !== "clarifying";
+  const workflowBusy = (["generating", "editing", "extracting", "uploading"] as string[]).includes(phase);
+  const analysisPending = phase === "analyzing";
   const hasResults = generatedImages.length > 0;
 
   const handleAnalyze = useCallback(async () => {
@@ -65,7 +73,7 @@ export default function InteriorDesignLayout() {
       const analyzeForm = new FormData();
       for (let i = 0; i < uploadedImages.length; i++) {
         const img = uploadedImages[i]!;
-        const blob = await fetch(`data:${img.mimeType};base64,${img.base64}`).then((r) => r.blob());
+        const blob = base64ToBlob(img.base64, img.mimeType);
         analyzeForm.append("roomImages", blob, `room-${i}.jpg`);
       }
       analyzeForm.set("adminSlug", adminSlug);
@@ -98,7 +106,8 @@ export default function InteriorDesignLayout() {
   }, [uploadedImages.length, roomAnalysis, phase, handleAnalyze]);
 
   const handleGenerate = useCallback(async () => {
-    if (!textPrompt.trim() || busy) return;
+    if (!textPrompt.trim() || workflowBusy || analysisPending) return;
+    if (!(clarifiedAnalysis ?? roomAnalysis)) return;
 
     try {
       const analysis = clarifiedAnalysis ?? roomAnalysis;
@@ -114,8 +123,7 @@ export default function InteriorDesignLayout() {
         genForm.set("roomAnalysis", JSON.stringify(analysis));
       }
       if (uploadedImageBase64) {
-        const blob = await fetch(`data:${uploadedImageMimeType};base64,${uploadedImageBase64}`)
-          .then((r) => r.blob());
+        const blob = base64ToBlob(uploadedImageBase64, uploadedImageMimeType || "image/jpeg");
         genForm.set("roomImage", blob, "room.jpg");
       }
 
@@ -145,7 +153,8 @@ export default function InteriorDesignLayout() {
     }
   }, [
     textPrompt,
-    busy,
+    workflowBusy,
+    analysisPending,
     roomAnalysis,
     clarifiedAnalysis,
     uploadedImageBase64,
@@ -191,7 +200,11 @@ export default function InteriorDesignLayout() {
     }
   }, [generatedImages, selectedImageIndex, adminSlug, setPhase, setError, router]);
 
-  const canGenerate = Boolean(textPrompt.trim() && !busy);
+  const canGenerate =
+    Boolean(textPrompt.trim()) &&
+    !workflowBusy &&
+    !analysisPending &&
+    Boolean(clarifiedAnalysis ?? roomAnalysis);
 
   return (
     <div className="id-layout">
@@ -235,29 +248,12 @@ export default function InteriorDesignLayout() {
               value={textPrompt}
               onChange={(e) => setTextPrompt(e.target.value)}
               placeholder="Describe the design you want—colors, style, materials, or any specific requirements."
-              disabled={busy}
+              disabled={workflowBusy}
               rows={4}
             />
           </div>
 
-          <div className="id-prompt-field">
-            <label className="id-prompt-field__label">Prioritize catalog SKUs (optional)</label>
-            <textarea
-              className="id-prompt-field__textarea"
-              value={preferredCatalogIdsForAi.join(", ")}
-              onChange={(e) =>
-                setPreferredCatalogIdsForAi(
-                  e.target.value
-                    .split(/[\s,;\n]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                )
-              }
-              placeholder="Comma-separated product IDs — listed first when AI picks visuals."
-              disabled={busy}
-              rows={2}
-            />
-          </div>
+          <CatalogProductPicker adminSlug={adminSlug} disabled={workflowBusy} />
 
           <button
             className="id-generate-btn"
@@ -282,7 +278,7 @@ export default function InteriorDesignLayout() {
 
         {/* Right Panel: Results + Chat */}
         <main className="id-main">
-          {!hasResults && !busy && (
+          {!hasResults && !workflowBusy && !analysisPending && (
             <div className="id-empty">
               <Sparkles className="h-16 w-16 text-gray-300" />
               <h2>Your design will appear here</h2>
@@ -293,7 +289,7 @@ export default function InteriorDesignLayout() {
             </div>
           )}
 
-          {busy && !hasResults && phase !== "analyzing" && (
+          {workflowBusy && !hasResults && (
             <div className="id-loading">
               <Loader2 className="h-12 w-12 animate-spin text-fuchsia-500" />
               <h2>{PHASE_LABELS[phase] || "Processing..."}</h2>

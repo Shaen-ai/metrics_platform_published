@@ -129,6 +129,28 @@ class ApiClient {
     });
   }
 
+  async uploadPlannerSurfaceImage(slug: string, file: File): Promise<{ url: string }> {
+    const form = new FormData();
+    form.append("image", file);
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/public/${encodeURIComponent(slug)}/planner-surface-image`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: form,
+      });
+    } catch {
+      throw new ApiNetworkError(
+        `API unavailable at ${API_URL}. Is the backend running?`
+      );
+    }
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `Upload failed: ${res.status}`);
+    }
+    return data as { url: string };
+  }
+
   async saveCustomDesign(body: { design: Record<string, unknown> }) {
     return this.request<{ data: unknown }>("/planners/custom-design/save", {
       method: "POST",

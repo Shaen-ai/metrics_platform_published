@@ -556,6 +556,10 @@ export default function Sidebar() {
                   tileHcm={room.floorTileHeightCm}
                   groutCm={room.floorTileGroutCm}
                   groutColor={room.floorTileGroutColor}
+                  textureWidthCm={room.floorTextureWidthCm}
+                  textureHeightCm={room.floorTextureHeightCm}
+                  allowUpload
+                  adminSlug={resolvedAdmin?.slug}
                   onPresetPick={(style) => setFloorStyle(style)}
                   onPatch={(patch) => setPlannerFloorSurface(patch)}
                 />
@@ -575,6 +579,8 @@ export default function Sidebar() {
                   mode={room.plinthMaterialMode ?? "color"}
                   textureUrl={room.plinthCustomTextureUrl}
                   materialName={room.plinthMaterialName}
+                  allowUpload
+                  adminSlug={resolvedAdmin?.slug}
                   onPatch={(patch) => setPlannerPlinthSurface(patch)}
                 />
               </AppearanceSection>
@@ -597,6 +603,10 @@ export default function Sidebar() {
                   tileHcm={room.wallTileHeightCm}
                   groutCm={room.wallTileGroutCm}
                   groutColor={room.wallTileGroutColor}
+                  textureWidthCm={room.wallTextureWidthCm}
+                  textureHeightCm={room.wallTextureHeightCm}
+                  allowUpload
+                  adminSlug={resolvedAdmin?.slug}
                   onPatch={(patch) => setPlannerWallCeilingSurface(patch)}
                 />
                 {(room.wallMaterialMode ?? "color") === "color" ? (
@@ -638,6 +648,10 @@ export default function Sidebar() {
                   tileHcm={room.ceilingTileHeightCm}
                   groutCm={room.ceilingTileGroutCm}
                   groutColor={room.ceilingTileGroutColor}
+                  textureWidthCm={room.ceilingTextureWidthCm}
+                  textureHeightCm={room.ceilingTextureHeightCm}
+                  allowUpload
+                  adminSlug={resolvedAdmin?.slug}
                   onPatch={(patch) => setPlannerWallCeilingSurface(patch)}
                 />
               </AppearanceSection>

@@ -1,7 +1,10 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { PlannerInteriorSurfaceMode, PlannerWallCeilingSurfacePatch } from "../types";
 import { CatalogSurfacePicker } from "./CatalogSurfacePicker";
+import { SurfaceTextureUpload } from "./SurfaceTextureUpload";
+import { isPlannerSurfaceUploadUrl } from "../utils/stripStaleRoomSurfaceTextures";
 
 type Prefix = "wall" | "ceiling";
 
@@ -17,6 +20,10 @@ type Props = {
   tileHcm?: number;
   groutCm?: number;
   groutColor?: string;
+  textureWidthCm?: number;
+  textureHeightCm?: number;
+  allowUpload?: boolean;
+  adminSlug?: string;
   onPatch: (patch: PlannerWallCeilingSurfacePatch) => void;
 };
 
@@ -58,7 +65,6 @@ function NumberField({
   label,
   value,
   min,
-  step,
   onChange,
 }: {
   label: string;
@@ -67,15 +73,31 @@ function NumberField({
   step?: number;
   onChange: (value: number) => void;
 }) {
+  const [local, setLocal] = useState(value != null ? String(value) : "");
+
+  useEffect(() => {
+    setLocal(value != null ? String(value) : "");
+  }, [value]);
+
+  const commit = () => {
+    const parsed = parseFloat(local);
+    if (!Number.isFinite(parsed) || (min != null && parsed < min)) {
+      setLocal(value != null ? String(value) : "");
+      return;
+    }
+    onChange(parsed);
+  };
+
   return (
     <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
       {label}
       <input
-        type="number"
-        min={min}
-        step={step}
-        value={value ?? ""}
-        onChange={(e) => onChange(Number(e.target.value))}
+        type="text"
+        inputMode="decimal"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
         className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
       />
     </label>
@@ -91,9 +113,17 @@ export function PlannerInteriorSurfaceControls({
   tileHcm,
   groutCm,
   groutColor,
+  textureWidthCm,
+  textureHeightCm,
+  allowUpload,
+  adminSlug,
   onPatch,
 }: Props) {
   const modeKey = patchKey(prefix, "MaterialMode");
+  const isUserUpload = !!textureUrl && isPlannerSurfaceUploadUrl(textureUrl);
+
+  const defaultTexW = prefix === "wall" ? 53 : 100;
+  const defaultTexH = prefix === "wall" ? 1000 : 100;
 
   return (
     <div className="space-y-2 rounded-lg border border-[var(--border)] p-2">
@@ -117,13 +147,47 @@ export function PlannerInteriorSurfaceControls({
 
       {mode !== "color" && (
         <div className="space-y-2">
+          {allowUpload && (
+            <SurfaceTextureUpload
+              adminSlug={adminSlug}
+              textureUrl={isUserUpload ? textureUrl : undefined}
+              onUploaded={(url) =>
+                onPatch({
+                  [patchKey(prefix, "MaterialMode")]: mode,
+                  [patchKey(prefix, "CustomTextureUrl")]: url,
+                  [patchKey(prefix, "TextureWidthCm")]: defaultTexW,
+                  [patchKey(prefix, "TextureHeightCm")]: defaultTexH,
+                  [patchKey(prefix, "MaterialName")]: undefined,
+                  [patchKey(prefix, "MaterialPricePerUnit")]: undefined,
+                } as PlannerWallCeilingSurfacePatch)
+              }
+              onRemove={() =>
+                onPatch({
+                  [patchKey(prefix, "MaterialMode")]: "color",
+                  [patchKey(prefix, "CustomTextureUrl")]: undefined,
+                  [patchKey(prefix, "TextureWidthCm")]: undefined,
+                  [patchKey(prefix, "TextureHeightCm")]: undefined,
+                  [patchKey(prefix, "MaterialName")]: undefined,
+                  [patchKey(prefix, "MaterialPricePerUnit")]: undefined,
+                  [patchKey(prefix, "MaterialProductWidthCm")]: undefined,
+                  [patchKey(prefix, "MaterialProductHeightCm")]: undefined,
+                } as PlannerWallCeilingSurfacePatch)
+              }
+            />
+          )}
           <CatalogSurfacePicker
             kind={prefix}
-            selectedTextureUrl={textureUrl}
+            selectedTextureUrl={!isUserUpload ? textureUrl : undefined}
             onSelect={(selection) =>
               onPatch(makeSurfaceSelectionPatch(prefix, selection))
             }
           />
+          {isUserUpload && (
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label="Texture W cm" value={textureWidthCm} min={1} step={1} onChange={(v) => onPatch(makePatch(prefix, "TextureWidthCm", v))} />
+              <NumberField label="Texture H cm" value={textureHeightCm} min={1} step={1} onChange={(v) => onPatch(makePatch(prefix, "TextureHeightCm", v))} />
+            </div>
+          )}
           {mode === "tile" && (
             <div className="grid grid-cols-4 gap-2">
               <NumberField label="Tile W cm" value={tileWcm} min={1} step={1} onChange={(v) => onPatch(makePatch(prefix, "TileWidthCm", v))} />

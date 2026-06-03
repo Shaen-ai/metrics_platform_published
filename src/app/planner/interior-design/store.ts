@@ -27,6 +27,14 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface SelectedCatalogProduct {
+  id: string;
+  name: string;
+  image: string;
+  price: number;
+  currency: string;
+}
+
 type Phase = "idle" | "uploading" | "analyzing" | "clarifying" | "generating" | "editing" | "extracting";
 
 const MAX_ROOM_IMAGES = 4;
@@ -61,6 +69,9 @@ interface InteriorDesignState {
   /** Optional SKU ids to pin into AI Creative Director retrieval (comma / JSON parsed client-side). */
   preferredCatalogIdsForAi: string[];
 
+  /** Lightweight product summaries for the selected catalog items (drives chip display in sidebar). */
+  selectedCatalogProducts: SelectedCatalogProduct[];
+
   /* Actions */
   setPhase: (phase: Phase) => void;
   setError: (error: string | null) => void;
@@ -78,6 +89,7 @@ interface InteriorDesignState {
   setSessionId: (id: string | null) => void;
   setCurrentPrompt: (prompt: string | null) => void;
   setPreferredCatalogIdsForAi: (ids: string[]) => void;
+  setSelectedCatalogProducts: (products: SelectedCatalogProduct[]) => void;
   addChatMessage: (msg: ChatMessage) => void;
   /** Removes this user message and all messages after it; drops gallery images produced in those turns. */
   truncateDesignChatFromUserMessage: (userMessageId: string) => void;
@@ -105,6 +117,7 @@ const initialState = {
   chatMessages: [] as ChatMessage[],
   currentPrompt: null as string | null,
   preferredCatalogIdsForAi: [] as string[],
+  selectedCatalogProducts: [] as SelectedCatalogProduct[],
 };
 
 function derivedImageFields(images: UploadedRoomImage[]) {
@@ -181,6 +194,8 @@ export const useInteriorDesignStore = create<InteriorDesignState>((set) => ({
   setSessionId: (id) => set({ sessionId: id }),
   setCurrentPrompt: (prompt) => set({ currentPrompt: prompt }),
   setPreferredCatalogIdsForAi: (ids) => set({ preferredCatalogIdsForAi: ids }),
+  setSelectedCatalogProducts: (products) =>
+    set({ selectedCatalogProducts: products, preferredCatalogIdsForAi: products.map((p) => p.id) }),
   addChatMessage: (msg) => set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
   truncateDesignChatFromUserMessage: (userMessageId) =>
     set((s) => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import FloorSwatch from "./FloorSwatch";
 import {
   LAMINATE_OPTIONS,
@@ -10,6 +11,8 @@ import {
   type PlannerFloorSurfacePatch,
 } from "../types";
 import { CatalogSurfacePicker } from "./CatalogSurfacePicker";
+import { SurfaceTextureUpload } from "./SurfaceTextureUpload";
+import { isPlannerSurfaceUploadUrl } from "../utils/stripStaleRoomSurfaceTextures";
 
 type Props = {
   presetVariant?: "swatches" | "kitchen-grid";
@@ -23,6 +26,10 @@ type Props = {
   tileHcm?: number;
   groutCm?: number;
   groutColor?: string;
+  textureWidthCm?: number;
+  textureHeightCm?: number;
+  allowUpload?: boolean;
+  adminSlug?: string;
   onPresetPick: (style: FloorStyle) => void;
   onPatch: (patch: PlannerFloorSurfacePatch) => void;
 };
@@ -31,7 +38,6 @@ function NumberField({
   label,
   value,
   min,
-  step,
   onChange,
 }: {
   label: string;
@@ -40,15 +46,31 @@ function NumberField({
   step?: number;
   onChange: (value: number) => void;
 }) {
+  const [local, setLocal] = useState(value != null ? String(value) : "");
+
+  useEffect(() => {
+    setLocal(value != null ? String(value) : "");
+  }, [value]);
+
+  const commit = () => {
+    const parsed = parseFloat(local);
+    if (!Number.isFinite(parsed) || (min != null && parsed < min)) {
+      setLocal(value != null ? String(value) : "");
+      return;
+    }
+    onChange(parsed);
+  };
+
   return (
     <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
       {label}
       <input
-        type="number"
-        min={min}
-        step={step}
-        value={value ?? ""}
-        onChange={(e) => onChange(Number(e.target.value))}
+        type="text"
+        inputMode="decimal"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
         className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
       />
     </label>
@@ -67,11 +89,16 @@ export function PlannerFloorSurfaceControls({
   tileHcm,
   groutCm,
   groutColor,
+  textureWidthCm,
+  textureHeightCm,
+  allowUpload,
+  adminSlug,
   onPresetPick,
   onPatch,
 }: Props) {
   const swatchLimit = presetVariant === "kitchen-grid" ? 12 : LAMINATE_OPTIONS.length;
   const swatches = LAMINATE_OPTIONS.slice(0, swatchLimit);
+  const isUserUpload = !!textureUrl && isPlannerSurfaceUploadUrl(textureUrl);
 
   return (
     <div className="space-y-3">
@@ -107,9 +134,37 @@ export function PlannerFloorSurfaceControls({
       ) : null}
 
       <div className="space-y-2">
+        {allowUpload && (
+          <SurfaceTextureUpload
+            adminSlug={adminSlug}
+            textureUrl={isUserUpload ? textureUrl : undefined}
+            onUploaded={(url) =>
+              onPatch({
+                floorMaterialMode: mode === "preset" ? "customImage" : mode,
+                floorCustomTextureUrl: url,
+                floorTextureWidthCm: 120,
+                floorTextureHeightCm: 20,
+                floorMaterialName: undefined,
+                floorMaterialPricePerUnit: undefined,
+              })
+            }
+            onRemove={() =>
+              onPatch({
+                floorMaterialMode: "preset",
+                floorCustomTextureUrl: undefined,
+                floorTextureWidthCm: undefined,
+                floorTextureHeightCm: undefined,
+                floorMaterialName: undefined,
+                floorMaterialPricePerUnit: undefined,
+                floorMaterialProductWidthCm: undefined,
+                floorMaterialProductHeightCm: undefined,
+              })
+            }
+          />
+        )}
         <CatalogSurfacePicker
           kind="floor"
-          selectedTextureUrl={textureUrl}
+          selectedTextureUrl={!isUserUpload ? textureUrl : undefined}
           onSelect={(selection) =>
             onPatch({
               floorMaterialMode: "customImage",
@@ -127,6 +182,12 @@ export function PlannerFloorSurfaceControls({
         />
         {mode !== "preset" ? (
           <>
+            {isUserUpload && (
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField label="Texture W cm" value={textureWidthCm} min={1} step={1} onChange={(v) => onPatch({ floorTextureWidthCm: v })} />
+                <NumberField label="Texture H cm" value={textureHeightCm} min={1} step={1} onChange={(v) => onPatch({ floorTextureHeightCm: v })} />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
                 Rotation

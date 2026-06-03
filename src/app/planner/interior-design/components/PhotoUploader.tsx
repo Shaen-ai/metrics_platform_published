@@ -3,8 +3,10 @@
 import { useCallback, useRef, useState } from "react";
 import { Upload, X, Image as ImageIcon, Star } from "lucide-react";
 import { useInteriorDesignStore } from "../store";
+import { compressImageFile } from "@/lib/compressImageBase64";
 
 const MAX_IMAGES = 4;
+const ACCEPTED_IMAGE_TYPES = "image/jpeg,image/png,image/webp,image/avif,.avif";
 
 export default function PhotoUploader() {
   const {
@@ -21,15 +23,12 @@ export default function PhotoUploader() {
     (files: FileList | File[]) => {
       const arr = Array.from(files);
       for (const file of arr) {
-        if (!file.type.startsWith("image/")) continue;
         if (useInteriorDesignStore.getState().uploadedImages.length >= MAX_IMAGES) break;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64 = result.split(",")[1];
-          if (base64) addUploadedImage(base64, file.type);
-        };
-        reader.readAsDataURL(file);
+        void compressImageFile(file, { maxDimension: 1200, jpegQuality: 0.75 }).then((result) => {
+          if (!result) return;
+          if (useInteriorDesignStore.getState().uploadedImages.length >= MAX_IMAGES) return;
+          addUploadedImage(result.base64, result.mimeType);
+        });
       }
     },
     [addUploadedImage],
@@ -44,7 +43,7 @@ export default function PhotoUploader() {
     [handleFiles],
   );
 
-  const busy = phase !== "idle";
+  const busy = phase !== "idle" && phase !== "clarifying";
   const hasImages = uploadedImages.length > 0;
   const canAddMore = uploadedImages.length < MAX_IMAGES;
 
@@ -96,7 +95,7 @@ export default function PhotoUploader() {
         <input
           ref={inputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept={ACCEPTED_IMAGE_TYPES}
           multiple
           className="hidden"
           onChange={(e) => {
@@ -128,7 +127,7 @@ export default function PhotoUploader() {
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept={ACCEPTED_IMAGE_TYPES}
         multiple
         className="hidden"
         onChange={(e) => {
@@ -147,7 +146,7 @@ export default function PhotoUploader() {
       <p className="id-photo-uploader__text">
         {dragOver ? "Drop your photos here" : "Drag & drop room photos, or click to browse"}
       </p>
-      <p className="id-photo-uploader__hint">Up to {MAX_IMAGES} photos (JPG, PNG, WebP) — optional</p>
+      <p className="id-photo-uploader__hint">Up to {MAX_IMAGES} photos (JPG, PNG, WebP, AVIF) — optional</p>
     </div>
   );
 }

@@ -50,11 +50,7 @@ const AIChat = dynamic(() => import("@/components/editor/AIChat"), {
   ssr: false,
 });
 
-export function EditorWorkspace({
-  embeddedInPlanner = false,
-}: {
-  embeddedInPlanner?: boolean;
-}) {
+export function EditorWorkspace() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<any>(null);
   const [activeTab, setActiveTab] = useState<"2d" | "3d">("3d");
@@ -915,11 +911,7 @@ export function EditorWorkspace({
 
   return (
     <div
-      className={
-        embeddedInPlanner
-          ? "h-full min-h-0 min-w-0 flex flex-col bg-[var(--background)]"
-          : "min-h-screen bg-[var(--background)]"
-      }
+      className="min-h-screen bg-[var(--background)]"
     >
       {/* Room Setup Modal */}
       {showRoomSetup && (

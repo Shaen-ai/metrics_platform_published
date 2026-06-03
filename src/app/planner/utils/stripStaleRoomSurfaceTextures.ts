@@ -29,16 +29,23 @@ export function collectValidPlannerSurfaceImageUrls(
   return set;
 }
 
+/** URLs stored under the `planner-surfaces` path are customer uploads and should never be stripped. */
+export function isPlannerSurfaceUploadUrl(url: string): boolean {
+  return url.includes("/planner-surfaces/");
+}
+
 function urlIsStillValid(url: string | undefined | null, valid: Set<string>): boolean {
   if (url == null) return true;
   const t = url.trim();
   if (t === "") return true;
+  if (isPlannerSurfaceUploadUrl(t)) return true;
   return valid.has(t);
 }
 
 /**
  * Drop floor / wall / ceiling / plinth texture selections whose image URL no longer appears in the
  * tenant's Materials or catalog API payloads (removed products, wrong localStorage, etc.).
+ * Customer-uploaded textures (planner-surfaces/) are always preserved.
  */
 export function stripStaleRoomSurfaceTextures(room: Room, validUrls: Set<string>): { room: Room; changed: boolean } {
   let next: Room = room;

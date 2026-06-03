@@ -1,6 +1,8 @@
 "use client";
 
 import { CatalogSurfacePicker } from "./CatalogSurfacePicker";
+import { SurfaceTextureUpload } from "./SurfaceTextureUpload";
+import { isPlannerSurfaceUploadUrl } from "../utils/stripStaleRoomSurfaceTextures";
 import type { PlannerPlinthSurfacePatch } from "../types";
 
 type Props = {
@@ -8,9 +10,11 @@ type Props = {
   heightCm?: number;
   depthCm?: number;
   color?: string;
-  mode?: "color" | "catalog";
+  mode?: "color" | "catalog" | "customImage";
   textureUrl?: string;
   materialName?: string;
+  allowUpload?: boolean;
+  adminSlug?: string;
   onPatch: (patch: PlannerPlinthSurfacePatch) => void;
 };
 
@@ -22,8 +26,12 @@ export function PlannerPlinthControls({
   mode = "color",
   textureUrl,
   materialName,
+  allowUpload,
+  adminSlug,
   onPatch,
 }: Props) {
+  const isUserUpload = !!textureUrl && isPlannerSurfaceUploadUrl(textureUrl);
+
   return (
     <div className="space-y-3">
       {/* Enable / disable toggle */}
@@ -84,7 +92,7 @@ export function PlannerPlinthControls({
                 type="button"
                 onClick={() => onPatch({ plinthMaterialMode: value })}
                 className={`rounded-md border px-2 py-1.5 text-xs ${
-                  mode === value
+                  (mode === value || (value === "catalog" && mode === "customImage"))
                     ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
                     : "border-[var(--border)] text-[var(--muted-foreground)]"
                 }`}
@@ -120,9 +128,33 @@ export function PlannerPlinthControls({
                   <span className="font-medium text-[var(--foreground)]">{materialName}</span>
                 </p>
               )}
+              {allowUpload && (
+                <SurfaceTextureUpload
+                  adminSlug={adminSlug}
+                  textureUrl={isUserUpload ? textureUrl : undefined}
+                  onUploaded={(url) =>
+                    onPatch({
+                      plinthMaterialMode: "customImage",
+                      plinthCustomTextureUrl: url,
+                      plinthMaterialName: undefined,
+                      plinthMaterialPricePerUnit: undefined,
+                    })
+                  }
+                  onRemove={() =>
+                    onPatch({
+                      plinthMaterialMode: "color",
+                      plinthCustomTextureUrl: undefined,
+                      plinthMaterialName: undefined,
+                      plinthMaterialPricePerUnit: undefined,
+                      plinthMaterialProductWidthCm: undefined,
+                      plinthMaterialProductHeightCm: undefined,
+                    })
+                  }
+                />
+              )}
               <CatalogSurfacePicker
                 kind="plinth"
-                selectedTextureUrl={textureUrl}
+                selectedTextureUrl={!isUserUpload ? textureUrl : undefined}
                 onSelect={(selection) =>
                   onPatch({
                     plinthMaterialMode: "catalog",

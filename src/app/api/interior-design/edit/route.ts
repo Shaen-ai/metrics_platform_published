@@ -5,9 +5,16 @@ import { buildEditInterpretationPrompt } from "@/lib/interiorDesignPrompts";
 import {
   buildInteriorDesignCatalogContext,
   buildGeminiMerchantFurnitureCatalogBlock,
-  fetchProductImagePartsForGemini,
+  buildPinsOnlyCoverageInstructions,
   catalogSummaryToPromptText,
+  type CatalogItemSummary,
 } from "@/lib/catalogForPrompts";
+import {
+  buildProductCollages,
+  buildCollageManifestText,
+  type ProductCollageInput,
+} from "@/lib/merchantProductCollage";
+import { filterCatalogIdsForRoom } from "@/lib/catalogRoomFilter";
 import { normalizeRoomAnalysisOpenings, type RoomAnalysis } from "@/lib/interiorDesignPrompts";
 import { withRetry } from "@/lib/aiRetry";
 import { PUBLIC_AI_GENERIC_ERROR, PUBLIC_AI_UNAVAILABLE } from "@/lib/tunzoneAi";
@@ -83,21 +90,39 @@ export async function POST(request: NextRequest) {
       ? anchorRaw.filter((x): x is string => typeof x === "string" && !!x.trim())
       : [];
 
+    const allPinIds = dedupe([...preferredCatalogIds, ...catalogAnchorIds]);
+    const hasUserPins = allPinIds.length > 0;
+
     const catalogCtx = await buildInteriorDesignCatalogContext({
       adminSlug,
       textPrompt: `${editMessage}\n\n${previousPrompt.slice(0, 1200)}`,
       roomAnalysis,
-      preferredCatalogIds: dedupe([...preferredCatalogIds, ...catalogAnchorIds]),
+      preferredCatalogIds: allPinIds,
     });
 
-    const catalogSnippetThin = catalogCtx.summariesForDirector.length
-      ? `\nPinned catalog excerpts for continuity:\n${catalogSummaryToPromptText(
-          catalogCtx.summariesForDirector.slice(0, 52),
-        )}`.slice(0, 7000)
-      : "";
+    /* ── Build Claude coverage context (pins-only vs full) ── */
+    const pinnedSummaries = hasUserPins
+      ? allPinIds
+          .map((id) => catalogCtx.summaryById.get(id))
+          .filter((x): x is CatalogItemSummary => Boolean(x))
+      : [];
+
+    const catalogSnippetThin = hasUserPins
+      ? (pinnedSummaries.length > 0
+          ? `\nPinned catalog (pins-only):\n${catalogSummaryToPromptText(pinnedSummaries)}`
+          : "")
+      : (catalogCtx.summariesForDirector.length
+          ? `\nPinned catalog excerpts for continuity:\n${catalogSummaryToPromptText(
+              catalogCtx.summariesForDirector.slice(0, 52),
+            )}`.slice(0, 7000)
+          : "");
+
+    const coverageBlock = hasUserPins
+      ? buildPinsOnlyCoverageInstructions(pinnedSummaries)
+      : catalogCtx.coverageInstructions;
 
     const merchantInteriorCatalogPreserveBlock =
-      `${catalogCtx.coverageInstructions}${catalogSnippetThin}`.trim();
+      `${coverageBlock}${catalogSnippetThin}`.trim();
 
     const claudeClient = new Anthropic({ apiKey: anthropicKey });
     const interpretPrompt = buildEditInterpretationPrompt(
@@ -136,23 +161,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to parse edit interpretation." }, { status: 500 });
     }
 
-    const geminiMerchantAppendix =
-      dedupe([...catalogAnchorIds, ...preferredCatalogIds]).length &&
-      catalogCtx.summaryById.size > 0
-        ? buildGeminiMerchantFurnitureCatalogBlock(
-            dedupe([...catalogAnchorIds, ...preferredCatalogIds]),
-            catalogCtx.summaryById,
-            catalogCtx.coverage,
-          )
-        : "";
-
-    let productRefs: Array<{ inlineData: { mimeType: string; data: string } }> = [];
-    if (catalogCtx.summaryById.size > 0) {
-      productRefs = await fetchProductImagePartsForGemini(
-        dedupe([...catalogAnchorIds, ...preferredCatalogIds]),
-        catalogCtx.summaryById,
-      );
+    /* ── Build product collages (same pipeline as generate) ── */
+    let filteredPinIds = allPinIds.filter((id) => catalogCtx.summaryById.has(id));
+    if (roomAnalysis?.room_type) {
+      const rf = filterCatalogIdsForRoom(filteredPinIds, roomAnalysis.room_type, catalogCtx.summaryById);
+      filteredPinIds = rf.kept;
     }
+
+    const collageInputs: ProductCollageInput[] = [];
+    for (const id of filteredPinIds) {
+      const row = catalogCtx.summaryById.get(id);
+      if (!row?.primaryImageUrl) continue;
+      collageInputs.push({ id: row.id, name: row.name, category: row.category, imageUrls: [row.primaryImageUrl] });
+    }
+    const collages = await buildProductCollages(collageInputs);
+    const collageManifest = buildCollageManifestText(collages);
+
+    const geminiMerchantAppendix = hasUserPins
+      ? (collages.length > 0
+          ? `USER-SELECTED PRODUCTS — PINS-ONLY MODE:\nPlace ONLY these ${collages.length} product(s). Do NOT add other furniture.\n` +
+            collages.map((c, i) => {
+              const row = catalogCtx.summaryById.get(c.productId);
+              const dims = row ? `~${row.width_cm}×${row.depth_cm}×${row.height_cm} cm` : "";
+              return `- "${c.productName}" [${c.productId}] (${row?.category ?? ""}${dims ? `, ${dims}` : ""}) — see Sheet ${i + 1}`;
+            }).join("\n")
+          : "")
+      : (allPinIds.length > 0 && catalogCtx.summaryById.size > 0
+          ? buildGeminiMerchantFurnitureCatalogBlock(allPinIds, catalogCtx.summaryById, catalogCtx.coverage)
+          : "");
+
+    const collageParts = collages.map((c) => ({
+      inlineData: { mimeType: c.mimeType, data: c.base64 },
+    }));
 
     const genai = new GoogleGenerativeAI(googleKey);
     const model = genai.getGenerativeModel({
@@ -164,11 +204,18 @@ export async function POST(request: NextRequest) {
     const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
     const hasAnnotation = !!annotatedImageBase64;
 
-    const merchCue = `${geminiMerchantAppendix}${productRefs.length ? "\nSKU reference thumbnails arrive after baseline/annotation frames above — echo them visually for listed merchants." : ""}`
+    const merchCue = `${geminiMerchantAppendix}${collageParts.length ? "\nProduct reference sheets are included as images — match each product's exact appearance." : ""}`
       .trim()
       .slice(0, 2500);
 
     if (currentImageBase64) {
+      for (const p of collageParts) {
+        parts.push(p);
+      }
+      if (collageManifest) {
+        parts.push({ text: collageManifest });
+      }
+
       parts.push({
         inlineData: { mimeType: "image/png", data: currentImageBase64 },
       });
@@ -182,19 +229,12 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      for (const p of productRefs) {
-        parts.push(p);
-      }
-
-      const skuRefNote =
-        productRefs.length > 0
-          ? hasAnnotation
-            ? "\n INLINE images AFTER the SECOND chunk are MERCHANT SKU reference thumbnails — style guides only, never annotated masks.\n"
-            : "\n INLINE images after the FIRST baseline frame are MERCHANT SKU reference thumbnails — prioritize their contours & finishes.\n"
-          : "";
+      const skuRefNote = collageParts.length > 0
+        ? `\nProduct reference sheets appear BEFORE the room image — match their exact appearance for listed products.\n`
+        : "";
 
       const annotationInstructions = hasAnnotation
-        ? `\n\nThe FIRST INLINE chunk is the current design; the SECOND is the user’s annotated markings. Respect ONLY those markings.${skuRefNote}`
+        ? `\n\nThe room photo is followed by the user's annotated markings. Respect ONLY those markings.${skuRefNote}`
         : skuRefNote;
 
       const structuralAnchorEdit = roomAnalysis
@@ -233,8 +273,11 @@ COMPLETENESS — the output must be a FULLY FINISHED interior (not half-designed
 The result must be the SAME ROOM from the SAME camera position with only the requested design changes applied. Every structural element stays identical.`,
       });
     } else {
+      for (const p of collageParts) {
+        parts.push(p);
+      }
       parts.push({
-        text: `${editResult.fullPrompt}${geminiMerchantAppendix ? `\n\n${geminiMerchantAppendix}` : ""}`,
+        text: `${editResult.fullPrompt}${merchCue ? `\n\n${merchCue}` : ""}`,
       });
     }
 
