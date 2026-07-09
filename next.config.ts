@@ -9,9 +9,12 @@ const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "ht
 const nextLibConstants = "./node_modules/next/dist/lib/constants.js";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   /** Hide the bottom-left Next.js dev tools indicator (route / bundler bubble) in development */
   devIndicators: false,
   reactStrictMode: false,
+  // PostHog ingest paths are trailing-slash sensitive.
+  skipTrailingSlashRedirect: true,
   turbopack: {
     resolveAlias: {
       "next/dist/esm/lib/constants": nextLibConstants,
@@ -54,6 +57,15 @@ const nextConfig: NextConfig = {
       {
         source: "/files/:path*",
         destination: `${API_ORIGIN}/files/:path*`,
+      },
+      // PostHog EU reverse proxy — same-origin ingest avoids ad blockers.
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://eu-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/ingest/:path*",
+        destination: "https://eu.i.posthog.com/:path*",
       },
     ];
   },

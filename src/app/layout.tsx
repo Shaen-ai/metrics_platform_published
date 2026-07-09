@@ -4,6 +4,7 @@ import { loadPublicBootstrap } from "@/lib/loadPublicBootstrap";
 import { getStorefrontLogoSrc } from "@/lib/brandLogo";
 import { PublishedTenantProvider } from "@/contexts/PublishedTenantProvider";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
+import { PostHogProvider } from "@/components/PostHogProvider";
 import { PublishedBodyTheme } from "@/components/PublishedBodyTheme";
 import { getPublishedThemeBodyStyle } from "@/app/site-designs/registry";
 
@@ -49,10 +50,12 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <GoogleAnalytics />
-        <PublishedTenantProvider bootstrapAdmin={admin} initialLang={initialLang}>
-          <PublishedBodyTheme />
-          {children}
-        </PublishedTenantProvider>
+        <PostHogProvider merchantSlug={admin?.slug ?? null} merchantName={admin?.companyName ?? null}>
+          <PublishedTenantProvider bootstrapAdmin={admin} initialLang={initialLang}>
+            <PublishedBodyTheme />
+            {children}
+          </PublishedTenantProvider>
+        </PostHogProvider>
       </body>
     </html>
   );

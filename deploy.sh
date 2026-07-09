@@ -33,7 +33,7 @@ $SSH "$SERVER" "cd '$REMOTE_DIR' \
   && sudo chown -R '$REMOTE_OWNER' '$REMOTE_DIR'"
 
 # --- Ensure server-side API keys are present in remote .env.local ----------
-SYNC_KEYS=(ANTHROPIC_API_KEY GOOGLE_AI_API_KEY OPENAI_API_KEY AI_API_URL AI_MODEL INTERNAL_API_KEY)
+SYNC_KEYS=(ANTHROPIC_API_KEY GOOGLE_AI_API_KEY OPENAI_API_KEY AI_API_URL AI_MODEL INTERNAL_API_KEY NEXT_PUBLIC_POSTHOG_KEY)
 echo "==> Syncing server-side API keys to remote .env.local ..."
 $SSH "$SERVER" "touch '$REMOTE_DIR/.env.local'"
 for KEY in "${SYNC_KEYS[@]}"; do

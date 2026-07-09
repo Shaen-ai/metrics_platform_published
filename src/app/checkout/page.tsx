@@ -22,6 +22,7 @@ import {
 } from "@/app/planner/wardrobe/data";
 import { formatPrice, toRelativeStorageUrl } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { track } from "@/lib/analytics";
 import {
   filterMaterialsForPlanner,
   isBoardFinishMaterial,
@@ -206,6 +207,7 @@ export default function CheckoutPage() {
     setSubmitting(true);
     try {
       const order = await submitOrderPayload();
+      track("storefront_order_submitted", { item_count: cart.length, total, payment: "standard" });
       clearCart();
       router.push(`/checkout/success?order_id=${encodeURIComponent(order.id)}`);
     } catch (err) {
@@ -241,6 +243,7 @@ export default function CheckoutPage() {
         no_note: "1",
       });
 
+      track("storefront_order_submitted", { item_count: cart.length, total, payment: "paypal" });
       clearCart();
       window.location.assign(`https://www.sandbox.paypal.com/cgi-bin/webscr?${paypalParams.toString()}`);
     } catch (err) {

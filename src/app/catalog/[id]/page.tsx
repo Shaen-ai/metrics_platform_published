@@ -18,6 +18,7 @@ import {
 } from "@/lib/plannerMaterials";
 import { catalogItemIsSoftFurnitureMode, catalogItemIsUpholstery } from "@/lib/catalogItemCategories";
 import type { CatalogItem } from "@/lib/types";
+import { track } from "@/lib/analytics";
 
 /** Normalize fabric fields from API (camelCase or snake_case) and infer from `fabricParts` when flag missing. */
 function resolveFabricCatalogMeta(item: CatalogItem) {
@@ -79,6 +80,10 @@ export default function CatalogDetailPage() {
 
   const item = catalogItems.find((i) => i.id === itemId);
   const fabricMeta = useMemo(() => (item ? resolveFabricCatalogMeta(item) : null), [item]);
+
+  useEffect(() => {
+    if (item) track("storefront_product_viewed", { product_id: item.id, product_name: item.name });
+  }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showUpholsterySection = useMemo(() => {
     if (!item || !fabricMeta) return false;
@@ -407,6 +412,7 @@ export default function CatalogDetailPage() {
               <button
                 type="button"
                 onClick={() => {
+                  track("storefront_added_to_cart", { product_id: item.id, product_name: item.name });
                   addToCart(item);
                   setAddedToCart(true);
                   setTimeout(() => setAddedToCart(false), 1500);
@@ -419,6 +425,7 @@ export default function CatalogDetailPage() {
               <button
                 type="button"
                 onClick={() => {
+                  track("storefront_added_to_cart", { product_id: item.id, product_name: item.name, intent: "order" });
                   addToCart(item);
                   router.push("/checkout");
                 }}
