@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { loadPublicBootstrap } from "@/lib/loadPublicBootstrap";
 import { getStorefrontLogoSrc } from "@/lib/brandLogo";
@@ -15,14 +16,47 @@ const DEFAULT_TITLE = "Tunzone - Design Furniture, Build Dreams";
 const DEFAULT_DESCRIPTION =
   "The all-in-one platform for furniture manufacturers. Create planners, publish your catalog, and let customers design their perfect rooms.";
 
+async function storefrontBaseUrl(): Promise<string | null> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  if (!host) return null;
+  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const { admin } = await loadPublicBootstrap();
   const hasCustomLogo = Boolean(admin?.logo?.trim());
   const brandIcon = hasCustomLogo ? getStorefrontLogoSrc(admin) : null;
 
+  const company = admin?.companyName?.trim();
+  const title = company ? `${company} — Furniture Store` : DEFAULT_TITLE;
+  const description = company
+    ? `Shop ${company}'s furniture catalog and design your room in 3D — browse products, plan your space, and order online.`
+    : DEFAULT_DESCRIPTION;
+
+  const baseUrl = await storefrontBaseUrl();
+
   return {
-    title: admin?.companyName?.trim() ? admin.companyName.trim() : DEFAULT_TITLE,
-    description: DEFAULT_DESCRIPTION,
+    ...(baseUrl ? { metadataBase: new URL(baseUrl) } : {}),
+    title,
+    description,
+    alternates: { canonical: "/" },
+    robots: { index: true, follow: true },
+    openGraph: {
+      type: "website",
+      url: "/",
+      siteName: company || "Tunzone",
+      title,
+      description,
+      ...(brandIcon ? { images: [{ url: brandIcon, alt: company || "Tunzone" }] } : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      ...(brandIcon ? { images: [brandIcon] } : {}),
+    },
     icons: brandIcon
       ? { icon: brandIcon, shortcut: brandIcon, apple: brandIcon }
       : { icon: "/favicon.png", shortcut: "/favicon.png", apple: "/logo.png" },
@@ -35,10 +69,29 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const { admin, initialLang } = await loadPublicBootstrap();
+  const baseUrl = await storefrontBaseUrl();
+  const company = admin?.companyName?.trim();
+  const orgJsonLd = company
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Store",
+        name: company,
+        ...(baseUrl ? { url: baseUrl } : {}),
+        ...(admin?.logo?.trim() ? { logo: getStorefrontLogoSrc(admin) } : {}),
+        makesOffer: { "@type": "Offer", category: "Furniture" },
+        parentOrganization: { "@type": "Organization", name: "Tunzone", url: "https://tunzone.com" },
+      }
+    : null;
 
   return (
     <html lang={initialLang} suppressHydrationWarning>
       <head>
+        {orgJsonLd ? (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+          />
+        ) : null}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href={GOOGLE_FONTS_URL} rel="stylesheet" />
