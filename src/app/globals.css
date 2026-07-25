@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --font-sans: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
-  --font-serif: "Fraunces", Georgia, serif;
-  --font-brand: "Fraunces", Georgia, serif;
+  --font-sans: "Satoshi", "Noto Sans Armenian", system-ui, -apple-system, sans-serif;
+  --font-serif: "Clash Display", "Noto Serif Armenian", sans-serif;
+  --font-brand: "Clash Display", "Noto Serif Armenian", sans-serif;
 
   --background: #FFF8F0;
   --foreground: #1A1A1A;
@@ -23,7 +23,6 @@
   --input: #F0E6D8;
   --ring: #E8772E;
 
-  --font-sans: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
 }
 
 html[data-theme="dark"] {

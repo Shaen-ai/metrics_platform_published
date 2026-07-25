@@ -1092,7 +1092,7 @@ function DimensionLabel({
     ctx.roundRect(4, 4, 248, 56, 8);
     ctx.fill();
     ctx.fillStyle = "#333";
-    ctx.font = "bold 28px Inter, sans-serif";
+    ctx.font = "bold 28px Satoshi, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, 128, 36);
@@ -1266,7 +1266,7 @@ function SmallDimensionLabel({
     ctx.roundRect(3, 3, 194, 42, 6);
     ctx.fill();
     ctx.fillStyle = color;
-    ctx.font = "bold 24px Inter, sans-serif";
+    ctx.font = "bold 24px Satoshi, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, 100, 27);

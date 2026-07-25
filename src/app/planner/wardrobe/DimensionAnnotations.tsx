@@ -32,7 +32,7 @@ function DimPill({
           borderRadius: 4,
           fontSize: 11,
           fontWeight: 700,
-          fontFamily: "'Inter', -apple-system, sans-serif",
+          fontFamily: "var(--font-sans)",
           whiteSpace: "nowrap",
           letterSpacing: "0.01em",
           lineHeight: 1.4,

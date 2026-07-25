@@ -26,7 +26,7 @@
   width: 100vw;
   overflow: hidden;
   background: #e2e0db;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
@@ -1387,7 +1387,7 @@
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 600;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   background: var(--surface);
   outline: none;

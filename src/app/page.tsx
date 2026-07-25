@@ -86,7 +86,7 @@ export default function HomePage() {
                 {t("hero.badge")}
               </div>
 
-              <h1 className="text-5xl lg:text-6xl xl:text-7xl font-normal leading-[1.1] mb-6 tracking-tight" style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>
+              <h1 className="text-5xl lg:text-6xl xl:text-7xl font-normal leading-[1.1] mb-6 tracking-tight" style={{ fontFamily: 'var(--font-serif)' }}>
                 {copy("heroTitle", t("hero.title1"))}
                 <br />
                 <span className="text-[var(--site-primary)]">{t("hero.title2")}</span>
@@ -176,7 +176,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <p className="text-sm font-semibold text-[var(--primary)] mb-3 tracking-wide uppercase">{t("features.label")}</p>
-            <h2 className="text-4xl lg:text-5xl mb-4" style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>{t("features.title")}</h2>
+            <h2 className="text-4xl lg:text-5xl mb-4" style={{ fontFamily: 'var(--font-serif)' }}>{t("features.title")}</h2>
             <p className="text-lg text-[var(--muted-foreground)] max-w-2xl mx-auto">
               {t("features.subtitle")}
             </p>
@@ -208,7 +208,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <p className="text-sm font-semibold text-[var(--primary)] mb-3 tracking-wide uppercase">{t("howItWorks.label")}</p>
-            <h2 className="text-4xl lg:text-5xl mb-4" style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>{t("howItWorks.title")}</h2>
+            <h2 className="text-4xl lg:text-5xl mb-4" style={{ fontFamily: 'var(--font-serif)' }}>{t("howItWorks.title")}</h2>
             <p className="text-lg text-[var(--muted-foreground)] max-w-2xl mx-auto">
               {t("howItWorks.subtitle")}
             </p>
@@ -235,7 +235,7 @@ export default function HomePage() {
       {/* ─── CTA Banner ─── */}
       <section className="py-24">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-4xl lg:text-5xl mb-6" style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>{t("cta.title")}</h2>
+          <h2 className="text-4xl lg:text-5xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>{t("cta.title")}</h2>
           <p className="text-lg text-[var(--muted-foreground)] mb-10 max-w-2xl mx-auto">
             {t("cta.subtitle")}
           </p>

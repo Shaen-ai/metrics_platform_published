@@ -29,7 +29,7 @@ function CornerPill({
           borderRadius: "50%",
           fontSize: 14,
           fontWeight: 800,
-          fontFamily: "'Inter', -apple-system, sans-serif",
+          fontFamily: "var(--font-sans)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",

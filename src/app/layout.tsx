@@ -9,8 +9,10 @@ import { PostHogProvider } from "@/components/PostHogProvider";
 import { PublishedBodyTheme } from "@/components/PublishedBodyTheme";
 import { getPublishedThemeBodyStyle } from "@/app/site-designs/registry";
 
-const GOOGLE_FONTS_URL =
-  "https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300..600;1,300..600&family=Inter+Tight:wght@400;500;600;700&display=swap";
+const FONTSHARE_URL =
+  "https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,700&display=swap";
+const NOTO_FONTS_URL =
+  "https://fonts.googleapis.com/css2?family=Noto+Serif+Armenian:wght@400;500;600;700&family=Noto+Sans+Armenian:wght@400;500;600;700&display=swap";
 
 const DEFAULT_TITLE = "Tunzone - Design Furniture, Build Dreams";
 const DEFAULT_DESCRIPTION =
@@ -92,9 +94,11 @@ export default async function RootLayout({
             dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
           />
         ) : null}
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href={GOOGLE_FONTS_URL} rel="stylesheet" />
+        <link href={FONTSHARE_URL} rel="stylesheet" />
+        <link href={NOTO_FONTS_URL} rel="stylesheet" />
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('tz-pub-theme');if(t!=='light'&&t!=='dark'){var h=new Date().getHours();t=h>=7&&h<19?'light':'dark'}document.documentElement.dataset.theme=t;document.cookie='tz-pub-theme='+t+';path=/;max-age=31536000;SameSite=Lax';}catch(e){}})();` }} />
       </head>
       <body

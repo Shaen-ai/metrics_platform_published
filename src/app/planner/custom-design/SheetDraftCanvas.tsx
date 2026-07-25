@@ -297,7 +297,7 @@ export default function SheetDraftCanvas() {
         excludeFromExport: false,
         originX: "center" as const,
         originY: "center" as const,
-        fontFamily: "Inter, system-ui, sans-serif",
+        fontFamily: "var(--font-sans)",
         objectCaching: false,
         sheetParentId: obj.sheetId,
         isSheetAnnotation: true,

@@ -473,7 +473,7 @@ export default function KitchenFloorPlanSvg({
               fill="#111827"
               fontSize={11}
               fontWeight={600}
-              fontFamily="'Inter', system-ui, -apple-system, sans-serif"
+              fontFamily="var(--font-sans)"
               textAnchor="middle"
               transform={`rotate(${labelR.toFixed(2)}, ${dmx + ox * 14}, ${dmy + oy * 14})`}
             >
@@ -611,7 +611,7 @@ export default function KitchenFloorPlanSvg({
         fontSize={12}
         fontWeight={700}
         textAnchor="middle"
-        fontFamily="'Inter', system-ui, -apple-system, sans-serif"
+        fontFamily="var(--font-sans)"
       >
         {roomTitle}
       </text>
@@ -622,7 +622,7 @@ export default function KitchenFloorPlanSvg({
         fontSize={11}
         fontWeight={500}
         textAnchor="middle"
-        fontFamily="'Inter', system-ui, -apple-system, sans-serif"
+        fontFamily="var(--font-sans)"
       >
         {areaSqFtLabel}
       </text>

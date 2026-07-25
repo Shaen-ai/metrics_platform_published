@@ -253,8 +253,8 @@ export function getPublishedThemeBodyStyle(admin?: Admin | null): CSSProperties 
     "--card-foreground": foreground,
     "--border": "color-mix(in srgb, var(--site-foreground) 16%, var(--site-background))",
     "--input": "color-mix(in srgb, var(--site-foreground) 16%, var(--site-background))",
-    "--font-serif": "Fraunces, Georgia, serif",
-    "--font-sans": "Inter Tight, Inter, system-ui, sans-serif",
+    "--font-serif": "Clash Display, Noto Serif Armenian, sans-serif",
+    "--font-sans": "Satoshi, Noto Sans Armenian, system-ui, sans-serif",
   } as CSSProperties;
 }
 
